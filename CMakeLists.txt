@@ -10,7 +10,6 @@ find_package(Boost REQUIRED COMPONENTS system thread unit_test_framework)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 
-add_subdirectory(json)
 
 # Core library target holding reusable HTTP client/server code
 add_library(RESTCore
@@ -45,12 +44,6 @@ else()
     target_link_libraries(RESTCore PUBLIC ${Boost_LIBRARIES} Threads::Threads OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
-# Example application
-add_executable(RESTCoreApp
-    main.cpp
-)
-
-target_link_libraries(RESTCoreApp PRIVATE RESTCore)
 
 # Enable CTest integration
 include(CTest)
@@ -60,7 +53,7 @@ add_executable(http_smoke_test
     tests/http_smoke_test.cpp
 )
 
-target_link_libraries(http_smoke_test PRIVATE RESTCore Boost::unit_test_framework ajson adata ojson odata json_document tinyxml)
+target_link_libraries(http_smoke_test PRIVATE RESTCore Boost::unit_test_framework)
 
 # Register with CTest
 add_test(NAME http_smoke_test COMMAND http_smoke_test)

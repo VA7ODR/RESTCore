@@ -11,8 +11,7 @@ The repository also includes a small Boost.Test-based test suite that exercises 
 - include/RESTCore: Public headers for the reusable library (HTTPClient.hpp, HTTPServerHost.hpp)
 - src: Library implementation sources (HTTPClient.cpp, HTTPServerHost.cpp)
 - tests: Boost.Test-based tests and fixtures
-- json: Third-party JSON utilities bundled as a subproject
-- CMakeLists.txt: Target-based build; library target RESTCore, app RESTCoreApp, test http_smoke_test
+- CMakeLists.txt: Target-based build; library target RESTCore and test http_smoke_test
 
 This layout follows common C++/CMake conventions: public headers live under include/<project>, sources under src, tests in tests, and external components in dedicated subdirectories.
 
@@ -45,7 +44,7 @@ sudo apt-get install -y build-essential cmake \
 Create a build directory (out-of-source build recommended):
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target RESTCoreApp -j
+cmake --build build --target RESTCore -j
 ```
 
 To build the tests as well (they are enabled by default):
@@ -53,16 +52,6 @@ To build the tests as well (they are enabled by default):
 cmake --build build --target http_smoke_test -j
 ```
 
-### 4) Run the example program
-```
-./build/RESTCoreApp
-```
-You should see output similar to:
-```
-Client GET http://127.0.0.1:8080/test -> status 200
-Response body:
-Hello from HTTPServerHost! You requested: /test
-```
 
 
 ## Running tests

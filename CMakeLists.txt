@@ -81,6 +81,18 @@ add_executable(openapi_codegen
 set_property(TARGET openapi_codegen PROPERTY CXX_STANDARD 20)
 set_property(TARGET openapi_codegen PROPERTY CXX_STANDARD_REQUIRED ON)
 
+# --- Optional: OpenAPI Echo example apps (server/client) ---
+option(RESTCORE_BUILD_OPENAPI_ECHO_EXAMPLE "Build the OpenAPI 'echo/motd' example server and client" OFF)
+if(RESTCORE_BUILD_OPENAPI_ECHO_EXAMPLE)
+    add_subdirectory(examples/openapi_echo)
+endif()
+
+# --- Optional: Generated OpenAPI JSON example (uses openapi_codegen) ---
+option(RESTCORE_BUILD_OPENAPI_GENERATED_EXAMPLE "Build the generated OpenAPI JSON example (runs openapi_codegen)" OFF)
+if(RESTCORE_BUILD_OPENAPI_GENERATED_EXAMPLE)
+    add_subdirectory(examples/openapi_generated)
+endif()
+
 # --- Tests for the OpenAPI code generator ---
 # This CTest runs the generator on a tiny sample spec and validates the output files.
 add_test(NAME openapi_codegen_test

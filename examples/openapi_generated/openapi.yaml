@@ -1,0 +1,49 @@
+openapi: 3.0.3
+info:
+  title: Generated Example API
+  version: 1.0.0
+  description: |
+    An example API to demonstrate using openapi_codegen with RESTCore.
+    Provides JSON responses and query parameters.
+servers:
+  - url: http://127.0.0.1:9094
+paths:
+  /info:
+    get:
+      summary: Service information
+      operationId: getInfo
+      responses:
+        '200':
+          description: Info payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service: { type: string }
+                  version: { type: string }
+                  endpoints:
+                    type: array
+                    items: { type: string }
+  /shout:
+    get:
+      summary: Shout text via query parameters
+      operationId: getShout
+      parameters:
+        - in: query
+          name: text
+          required: true
+          schema: { type: string }
+        - in: query
+          name: upper
+          required: false
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Shouted result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { type: string }

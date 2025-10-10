@@ -74,8 +74,7 @@ namespace {
         }
 
         ~ServerFixture() {
-            // Stop is expected to be idempotent; call twice for good measure
-            server.stop();
+            // Stop server; additional stop() calls are safe (idempotent)
             server.stop();
         }
     };

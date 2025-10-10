@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: RESTCore Echo Example API
+  version: 1.0.0
+  description: |
+    A minimal API for demonstration. Provides a message-of-the-day and an echo endpoint.
+servers:
+  - url: http://127.0.0.1:9090
+paths:
+  /motd:
+    get:
+      summary: Get message of the day
+      operationId: getMotd
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "MOTD: Welcome to RESTCore!"
+  /echo:
+    post:
+      summary: Echo the posted text (uppercased)
+      operationId: postEcho
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+              example: hello world
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Echo: HELLO WORLD"

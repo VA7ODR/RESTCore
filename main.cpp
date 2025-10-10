@@ -1,8 +1,8 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
-#include "HTTPClient.hpp"
-#include "HTTPServerHost.hpp"
+#include "RESTCore/HTTPClient.hpp"
+#include "RESTCore/HTTPServerHost.hpp"
 
 int main() {
     try {

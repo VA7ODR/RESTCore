@@ -1,4 +1,4 @@
-#include "HTTPClient.hpp"
+#include "RESTCore/HTTPClient.hpp"
 
 #include <stdexcept>
 #include <regex>
@@ -12,7 +12,7 @@ namespace http = beast::http;
 HTTPClient::ParsedUrl HTTPClient::parseUrl(const std::string& url) {
     // Very small/basic URL parser for http/https
     // Supports: http(s)://host[:port][/path?query]
-    static const std::regex re(R"(^([Hh][Tt][Tt][Pp][Ss]?)://([^/:]+)(?::(\d+))?(\/.*)?$)");
+    static const std::regex re(R"(^([Hh][Tt][Tt][Pp][Ss]?)://([^/:]+)(?::(\d+))?(\/.*)?$")");
     std::smatch m;
     if (!std::regex_match(url, m, re)) {
         throw std::invalid_argument("Unsupported or invalid URL: " + url);

@@ -1,13 +1,13 @@
 #define BOOST_TEST_MODULE HttpSuite
-#include <boost/test/included/unit_test.hpp>
+#include <boost/test/unit_test.hpp>
 
 #include <thread>
 #include <chrono>
 #include <string>
 #include <csignal>
 
-#include "HTTPClient.hpp"
-#include "HTTPServerHost.hpp"
+#include "RESTCore/HTTPClient.hpp"
+#include "RESTCore/HTTPServerHost.hpp"
 
 #include <boost/asio.hpp>
 

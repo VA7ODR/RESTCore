@@ -120,7 +120,7 @@ cmake --build build --target http_smoke_test -j
 
 
 ## Running tests
-This project uses CTest with Boost.Test (single-header) for a lightweight setup.
+This project uses plain CTest with Boost.Test (single-header) — no legacy dashboard targets required.
 
 From your build directory:
 ```
@@ -133,6 +133,7 @@ cmake --build build --target http_smoke_test && \
 ```
 
 Notes:
+- We no longer use the old CTest/CDash dashboard targets (Experimental/Nightly/Continuous). If you saw them before, they came from including the CTest module. We now call `enable_testing()` only, so those targets are not generated.
 - The tests start a local HTTP server bound to 127.0.0.1 on an ephemeral port.
 - The tests avoid port conflicts by probing for a free port and waiting until the server is ready.
 
@@ -147,3 +148,33 @@ Notes:
 This project is licensed under the MIT License. See the LICENSE file.
 
 Copyright (C) 2025 James Baker.
+
+
+## OpenAPI → C++ codegen (using RESTCore)
+If you are considering generating C++ client/server code from an OpenAPI spec that targets RESTCore::Client and RESTCore::Server, see docs/OPENAPI_CODEGEN_PLAN.md for a detailed design and work estimate.
+
+Summary:
+- An MVP covering OpenAPI 3.0 with JSON bodies, path/query/header params, and basic response handling is estimated at ~3–5 weeks for a single engineer.
+- The generated client would wrap RESTCore::Client; the server side would emit a router that binds to RESTCore::Server via set_callback.
+- Extended features (security schemes, multipart, oneOf/anyOf/allOf, templates) add 2–6+ weeks depending on scope.
+
+
+## OpenAPI code generator (MVP scaffold)
+A minimal generator executable is available as the target `openapi_codegen`.
+
+- Build:
+  cmake --build <your-build-dir> --target openapi_codegen
+
+- Usage:
+  openapi_codegen --output <dir> [--input <openapi.(json|yaml)>] [--name <ApiName>]
+
+What it does (today):
+- Derives an `ApiName` from `info.title` in the spec (or from the file name), sanitizes it to a C++-safe identifier, and creates a namespace scope `RESTCore_ApiName`.
+- Emits three headers under the output directory:
+  - include/RESTCore_`ApiName`/json_backend.hpp — a small adapter that uses nlohmann::json by default
+  - include/RESTCore_`ApiName`/Client.hpp — a stub Client class with a base URL; methods will be generated per operationId in future iterations
+  - include/RESTCore_`ApiName`/Server.hpp — a stub Handlers interface and Server::bind glue entry point to connect routing with RESTCore::Server
+
+Notes:
+- The generator itself has no dependency on nlohmann/json; the generated code includes `<nlohmann/json.hpp>`. Your consumer project should bring nlohmann/json (via package manager, FetchContent, or system install).
+- The long-term plan remains to generate full client/server code from OpenAPI as described in docs/OPENAPI_CODEGEN_PLAN.md, with `nlohmann/json` as the default JSON backend and backend-swappability retained.

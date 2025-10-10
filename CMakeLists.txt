@@ -46,7 +46,8 @@ endif()
 
 
 # Enable CTest integration
-include(CTest)
+# We only need enable_testing() for add_test; avoid legacy dashboard targets.
+enable_testing()
 
 # --- HTTP smoke tests using Boost.Test (single-header) ---
 add_executable(http_smoke_test
@@ -70,3 +71,20 @@ if(DOXYGEN_FOUND)
             VERBATIM)
     endif()
 endif()
+
+
+# --- OpenAPI code generator tool (MVP scaffold) ---
+add_executable(openapi_codegen
+    tools/openapi_codegen.cpp
+)
+# Require C++20 for the tool as well
+set_property(TARGET openapi_codegen PROPERTY CXX_STANDARD 20)
+set_property(TARGET openapi_codegen PROPERTY CXX_STANDARD_REQUIRED ON)
+
+# --- Tests for the OpenAPI code generator ---
+# This CTest runs the generator on a tiny sample spec and validates the output files.
+add_test(NAME openapi_codegen_test
+    COMMAND /bin/bash ${CMAKE_SOURCE_DIR}/tests/openapi_codegen_test.sh
+            $<TARGET_FILE:openapi_codegen>
+            ${CMAKE_SOURCE_DIR}/tests/data/petstore.json
+            ${CMAKE_BINARY_DIR}/generated_openapi_test)

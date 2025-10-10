@@ -115,6 +115,13 @@ void HTTPServerHost::http_accept_loop(ListenerRuntime* rt,
                 if (!rt->running.load()) break;
                 continue; // transient error, continue
             }
+            // If we've been asked to stop, do not spawn a session for this wake-up connection
+            if (!rt->running.load()) {
+                boost::system::error_code ignore_ec;
+                socket.shutdown(tcp::socket::shutdown_both, ignore_ec);
+                socket.close(ignore_ec);
+                break;
+            }
             std::thread(&HTTPServerHost::handle_http_session, std::move(socket), cb).detach();
         }
     } catch (const std::exception& e) {
@@ -150,6 +157,13 @@ void HTTPServerHost::https_accept_loop(ListenerRuntime* rt,
             if (ec) {
                 if (!rt->running.load()) break;
                 continue;
+            }
+            // If stopping, avoid spawning a session for the wake-up connection
+            if (!rt->running.load()) {
+                boost::system::error_code ignore_ec;
+                socket.shutdown(tcp::socket::shutdown_both, ignore_ec);
+                socket.close(ignore_ec);
+                break;
             }
             std::thread(&HTTPServerHost::handle_https_session, std::move(socket), cb, ctx).detach();
         }

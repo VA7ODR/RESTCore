@@ -1,4 +1,4 @@
-#include "RESTCore/HTTPClient.hpp"
+#include "RESTCore/Client.hpp"
 
 #include <stdexcept>
 #include <regex>
@@ -9,7 +9,7 @@ namespace ssl = net::ssl;
 namespace beast = boost::beast;
 namespace http = beast::http;
 
-HTTPClient::ParsedUrl HTTPClient::parseUrl(const std::string& url) {
+RESTCore::Client::ParsedUrl RESTCore::Client::parseUrl(const std::string& url) {
     // Very small/basic URL parser for http/https
     // Supports: http(s)://host[:port][/path?query]
     static const std::regex re(R"(^([Hh][Tt][Tt][Pp][Ss]?)://([^/:]+)(?::(\d+))?(\/.*)?$")");
@@ -26,38 +26,38 @@ HTTPClient::ParsedUrl HTTPClient::parseUrl(const std::string& url) {
     return p;
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::Head(const std::string& url, const Headers& headers) {
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::Head(const std::string& url, const Headers& headers) {
     auto p = parseUrl(url);
     return request(p.https, http::verb::head, p.host, p.port, p.target, headers, nullptr, nullptr);
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::Get(const std::string& url, const Headers& headers) {
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::Get(const std::string& url, const Headers& headers) {
     auto p = parseUrl(url);
     return request(p.https, http::verb::get, p.host, p.port, p.target, headers, nullptr, nullptr);
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::Delete(const std::string& url, const Headers& headers) {
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::Delete(const std::string& url, const Headers& headers) {
     auto p = parseUrl(url);
     return request(p.https, http::verb::delete_, p.host, p.port, p.target, headers, nullptr, nullptr);
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::Post(const std::string& url, const std::string& body, const std::string& content_type, const Headers& headers) {
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::Post(const std::string& url, const std::string& body, const std::string& content_type, const Headers& headers) {
     auto p = parseUrl(url);
     return request(p.https, http::verb::post, p.host, p.port, p.target, headers, &body, &content_type);
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::Put(const std::string& url, const std::string& body, const std::string& content_type, const Headers& headers) {
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::Put(const std::string& url, const std::string& body, const std::string& content_type, const Headers& headers) {
     auto p = parseUrl(url);
     return request(p.https, http::verb::put, p.host, p.port, p.target, headers, &body, &content_type);
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::Head(bool https,
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::Head(bool https,
                  const std::string& host,
                  const std::string& port,
                  const std::string& target,
@@ -65,8 +65,8 @@ HTTPClient::Head(bool https,
     return request(https, http::verb::head, host, port, target, headers, nullptr, nullptr);
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::Get(bool https,
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::Get(bool https,
                 const std::string& host,
                 const std::string& port,
                 const std::string& target,
@@ -74,8 +74,8 @@ HTTPClient::Get(bool https,
     return request(https, http::verb::get, host, port, target, headers, nullptr, nullptr);
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::Delete(bool https,
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::Delete(bool https,
                    const std::string& host,
                    const std::string& port,
                    const std::string& target,
@@ -83,8 +83,8 @@ HTTPClient::Delete(bool https,
     return request(https, http::verb::delete_, host, port, target, headers, nullptr, nullptr);
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::Post(bool https,
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::Post(bool https,
                  const std::string& host,
                  const std::string& port,
                  const std::string& target,
@@ -94,8 +94,8 @@ HTTPClient::Post(bool https,
     return request(https, http::verb::post, host, port, target, headers, &body, &content_type);
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::Put(bool https,
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::Put(bool https,
                 const std::string& host,
                 const std::string& port,
                 const std::string& target,
@@ -105,8 +105,8 @@ HTTPClient::Put(bool https,
     return request(https, http::verb::put, host, port, target, headers, &body, &content_type);
 }
 
-std::tuple<unsigned, HTTPClient::Response>
-HTTPClient::request(bool https,
+std::tuple<unsigned, RESTCore::Client::Response>
+RESTCore::Client::request(bool https,
                     http::verb method,
                     const std::string& host,
                     const std::string& port,

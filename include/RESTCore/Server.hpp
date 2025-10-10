@@ -18,6 +18,8 @@ namespace http  = beast::http;
 namespace net   = boost::asio;
 namespace ssl   = net::ssl;
 
+namespace RESTCore {
+
 // A minimal multi-connection HTTP(S) host that accepts incoming connections
 // and invokes a user callback for each request, providing references to the
 // Beast HTTP request and response, and the client endpoint address. The
@@ -29,7 +31,7 @@ namespace ssl   = net::ssl;
 // - Each listener (HTTP/HTTPS) runs an accept loop on its own thread.
 // - One request per connection (no keep-alive handling).
 // - HTTPS requires certificate and private key files.
-class HTTPServerHost {
+class Server {
 public:
     using Request  = http::request<http::string_body>;
     using Response = http::response<http::string_body>;
@@ -40,8 +42,8 @@ public:
     // - const std::string& client_address (ip[:port] string)
     using Callback = std::function<void(const Request&, Response&, const std::string&)>;
 
-    HTTPServerHost();
-    ~HTTPServerHost();
+    Server();
+    ~Server();
 
     // Set the request handler callback. Must be set before start().
     void set_callback(Callback cb);
@@ -115,3 +117,5 @@ private:
                                      Callback cb,
                                      const std::shared_ptr<ssl::context>& ssl_ctx);
 };
+
+} // namespace RESTCore

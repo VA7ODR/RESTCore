@@ -1,13 +1,13 @@
 #define BOOST_TEST_MODULE HttpSuite
-#include <boost/test/unit_test.hpp>
+#include <boost/test/included/unit_test.hpp>
 
 #include <thread>
 #include <chrono>
 #include <string>
 #include <csignal>
 
-#include "RESTCore/HTTPClient.hpp"
-#include "RESTCore/HTTPServerHost.hpp"
+#include "RESTCore/Client.hpp"
+#include "RESTCore/Server.hpp"
 
 #include <boost/asio.hpp>
 
@@ -48,7 +48,7 @@ namespace {
     }
 
     struct ServerFixture {
-        HTTPServerHost server;
+        RESTCore::Server server;
         std::string host = "127.0.0.1";
         unsigned short port = 0;
 
@@ -56,8 +56,8 @@ namespace {
             // Avoid SIGPIPE terminating the process in some environments (e.g., CTest)
             std::signal(SIGPIPE, SIG_IGN);
             // Basic echo-style handler used by multiple tests
-            server.set_callback([](const HTTPServerHost::Request& req,
-                                   HTTPServerHost::Response& res,
+            server.set_callback([](const RESTCore::Server::Request& req,
+                                   RESTCore::Server::Response& res,
                                    const std::string& /*client*/){
                 res.result(boost::beast::http::status::ok);
                 res.set(boost::beast::http::field::content_type, "text/plain; charset=utf-8");
@@ -84,14 +84,14 @@ namespace {
 BOOST_FIXTURE_TEST_SUITE(HttpSuite, ServerFixture)
 
 BOOST_AUTO_TEST_CASE(get_returns_ok_and_body_contains_target) {
-    auto [status, res] = HTTPClient::Get(false, host, std::to_string(port), "/test");
+    auto [status, res] = RESTCore::Client::Get(false, host, std::to_string(port), "/test");
     BOOST_TEST(status == 200u);
     BOOST_TEST(res[boost::beast::http::field::content_type] == "text/plain; charset=utf-8");
     BOOST_TEST(res.body().find("/test") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(head_returns_ok_and_no_body_content) {
-    auto [status, res] = HTTPClient::Head(false, host, std::to_string(port), "/head");
+    auto [status, res] = RESTCore::Client::Head(false, host, std::to_string(port), "/head");
     BOOST_TEST(status == 200u);
     // For HEAD, some clients may still expose a body buffer; only assert status/header here
     const bool has_ct = (res.find(boost::beast::http::field::content_type) != res.end());
@@ -110,7 +110,7 @@ BOOST_AUTO_TEST_CASE(connect_to_unused_port_raises_error) {
     unsigned short free_port = find_free_port();
     bool failed = false;
     try {
-        (void)HTTPClient::Get(false, host, std::to_string(free_port), "/");
+        (void)RESTCore::Client::Get(false, host, std::to_string(free_port), "/");
     } catch (const std::exception&) {
         failed = true;
     }
@@ -119,7 +119,7 @@ BOOST_AUTO_TEST_CASE(connect_to_unused_port_raises_error) {
 
 BOOST_AUTO_TEST_CASE(post_echo_like_handler_returns_ok) {
     // Our handler returns OK regardless of method; just ensure client path works for POST
-    auto [status, res] = HTTPClient::Post(false, host, std::to_string(port), "/post", "{\"k\":1}", "application/json");
+    auto [status, res] = RESTCore::Client::Post(false, host, std::to_string(port), "/post", "{\"k\":1}", "application/json");
     BOOST_TEST(status == 200u);
     BOOST_TEST(res[boost::beast::http::field::content_type] == "text/plain; charset=utf-8");
 }

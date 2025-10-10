@@ -1,4 +1,4 @@
-#include "RESTCore/HTTPServerHost.hpp"
+#include "RESTCore/Server.hpp"
 
 #include <fstream>
 #include <iostream>
@@ -9,23 +9,23 @@ namespace ssl = net::ssl;
 namespace beast = boost::beast;
 namespace http = beast::http;
 
-HTTPServerHost::HTTPServerHost() = default;
-HTTPServerHost::~HTTPServerHost() { stop(); }
+RESTCore::Server::Server() = default;
+RESTCore::Server::~Server() { stop(); }
 
-void HTTPServerHost::set_callback(Callback cb) { callback_ = std::move(cb); }
+void RESTCore::Server::set_callback(Callback cb) { callback_ = std::move(cb); }
 
-void HTTPServerHost::listen_http(const std::string& address, unsigned short port) {
+void RESTCore::Server::listen_http(const std::string& address, unsigned short port) {
     http_cfgs_.push_back(HttpListenerCfg{address, port});
 }
 
-void HTTPServerHost::listen_https(const std::string& address,
+void RESTCore::Server::listen_https(const std::string& address,
                                   unsigned short port,
                                   const std::string& cert_file,
                                   const std::string& key_file) {
     https_cfgs_.push_back(HttpsListenerCfg{address, port, cert_file, key_file});
 }
 
-void HTTPServerHost::start() {
+void RESTCore::Server::start() {
     // Start HTTP listeners
     for (const auto& cfg : http_cfgs_) {
         auto rt = std::make_unique<ListenerRuntime>();
@@ -53,7 +53,7 @@ void HTTPServerHost::start() {
     }
 }
 
-void HTTPServerHost::stop() {
+void RESTCore::Server::stop() {
     auto wake = [](const std::string& addr, unsigned short port) {
         try {
             std::string connect_addr = addr;
@@ -94,7 +94,7 @@ void HTTPServerHost::stop() {
     https_runtimes_.clear();
 }
 
-void HTTPServerHost::http_accept_loop(ListenerRuntime* rt,
+void RESTCore::Server::http_accept_loop(ListenerRuntime* rt,
                                       Callback cb,
                                       std::string address,
                                       unsigned short port) {
@@ -122,7 +122,7 @@ void HTTPServerHost::http_accept_loop(ListenerRuntime* rt,
                 socket.close(ignore_ec);
                 break;
             }
-            std::thread(&HTTPServerHost::handle_http_session, std::move(socket), cb).detach();
+            std::thread(&RESTCore::Server::handle_http_session, std::move(socket), cb).detach();
         }
     } catch (const std::exception& e) {
         // Log and exit loop
@@ -130,7 +130,7 @@ void HTTPServerHost::http_accept_loop(ListenerRuntime* rt,
     }
 }
 
-void HTTPServerHost::https_accept_loop(ListenerRuntime* rt,
+void RESTCore::Server::https_accept_loop(ListenerRuntime* rt,
                                        Callback cb,
                                        std::string address,
                                        unsigned short port,
@@ -165,7 +165,7 @@ void HTTPServerHost::https_accept_loop(ListenerRuntime* rt,
                 socket.close(ignore_ec);
                 break;
             }
-            std::thread(&HTTPServerHost::handle_https_session, std::move(socket), cb, ctx).detach();
+            std::thread(&RESTCore::Server::handle_https_session, std::move(socket), cb, ctx).detach();
         }
     } catch (const std::exception& e) {
         // Log and exit loop
@@ -180,14 +180,14 @@ static std::string remote_addr_string(const tcp::socket& s) {
     return ep.address().to_string() + ":" + std::to_string(ep.port());
 }
 
-void HTTPServerHost::handle_http_session(tcp::socket socket, Callback cb) {
+void RESTCore::Server::handle_http_session(tcp::socket socket, Callback cb) {
     try {
         beast::tcp_stream stream{std::move(socket)};
         beast::flat_buffer buffer;
-        HTTPServerHost::Request req;
+        RESTCore::Server::Request req;
         http::read(stream, buffer, req);
 
-        HTTPServerHost::Response res{http::status::ok, req.version()};
+        RESTCore::Server::Response res{http::status::ok, req.version()};
         res.set(http::field::server, std::string{"HTTPServerHost/1.0"});
         res.keep_alive(false);
 
@@ -209,7 +209,7 @@ void HTTPServerHost::handle_http_session(tcp::socket socket, Callback cb) {
     }
 }
 
-void HTTPServerHost::handle_https_session(tcp::socket socket,
+void RESTCore::Server::handle_https_session(tcp::socket socket,
                                           Callback cb,
                                           const std::shared_ptr<ssl::context>& ssl_ctx) {
     try {
@@ -218,10 +218,10 @@ void HTTPServerHost::handle_https_session(tcp::socket socket,
         stream.handshake(ssl::stream_base::server);
 
         beast::flat_buffer buffer;
-        HTTPServerHost::Request req;
+        RESTCore::Server::Request req;
         http::read(stream, buffer, req);
 
-        HTTPServerHost::Response res{http::status::ok, req.version()};
+        RESTCore::Server::Response res{http::status::ok, req.version()};
         res.set(http::field::server, std::string{"HTTPServerHost/1.0 (TLS)"});
         res.keep_alive(false);
 

@@ -1,15 +1,15 @@
 # RESTCore
 
 A minimal example project that demonstrates:
-- HTTPServerHost: a small synchronous HTTP(S) server built on Boost.Beast/ASIO
-- HTTPClient: a simple HTTP/HTTPS client using Boost.Beast/ASIO
+- Server: a small synchronous HTTP(S) server built on Boost.Beast/ASIO
+- Client: a simple HTTP/HTTPS client using Boost.Beast/ASIO
 
 The repository also includes a small Boost.Test-based test suite that exercises the server and client together.
 
 
 ## Project layout
-- include/RESTCore: Public headers for the reusable library (HTTPClient.hpp, HTTPServerHost.hpp)
-- src: Library implementation sources (HTTPClient.cpp, HTTPServerHost.cpp)
+- include/RESTCore: Public headers for the reusable library (Client.hpp, Server.hpp)
+- src: Library implementation sources (Client.cpp, Server.cpp)
 - tests: Boost.Test-based tests and fixtures
 - CMakeLists.txt: Target-based build; library target RESTCore and test http_smoke_test
 

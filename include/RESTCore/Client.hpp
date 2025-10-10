@@ -10,7 +10,9 @@
 #include <boost/beast/http.hpp>
 #include <boost/beast/ssl.hpp>
 
-class HTTPClient {
+namespace RESTCore {
+
+class Client {
 public:
     using Headers = std::map<std::string, std::string>;
     using Response = boost::beast::http::response<boost::beast::http::string_body>;
@@ -93,3 +95,5 @@ private:
     struct ParsedUrl { bool https; std::string host; std::string port; std::string target; };
     static ParsedUrl parseUrl(const std::string& url);
 };
+
+} // namespace RESTCore

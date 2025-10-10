@@ -6,15 +6,15 @@ set(Boost_USE_STATIC_LIBS ON)
 # Do not force static runtime; keep system default to avoid link issues
 # set(Boost_USE_STATIC_RUNTIME ON)
 
-find_package(Boost REQUIRED COMPONENTS system thread unit_test_framework)
+find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 
 
 # Core library target holding reusable HTTP client/server code
 add_library(RESTCore
-    src/HTTPClient.cpp
-    src/HTTPServerHost.cpp
+    src/Client.cpp
+    src/Server.cpp
 )
 
 # Public headers live under include/; expose to dependents
@@ -53,7 +53,7 @@ add_executable(http_smoke_test
     tests/http_smoke_test.cpp
 )
 
-target_link_libraries(http_smoke_test PRIVATE RESTCore Boost::unit_test_framework)
+target_link_libraries(http_smoke_test PRIVATE RESTCore)
 
 # Register with CTest
-add_test(NAME http_smoke_test COMMAND http_smoke_test)
+add_test(NAME http_smoke_test COMMAND http_smoke_test --catch_system_errors=no)

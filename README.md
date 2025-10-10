@@ -1,6 +1,6 @@
 # RESTCore
 
-Reference documentation: https://va7odr.github.io/RESTCore/index.html
+Reference documentation: https://va7odr.github.io/RESTCore/html/index.html
 
 A minimal example project that demonstrates:
 - Server: a small synchronous HTTP(S) server built on Boost.Beast/ASIO

@@ -1,5 +1,14 @@
 #pragma once
 
+/**
+ * \file Client.hpp
+ * \brief Synchronous HTTP/HTTPS client based on Boost.Beast/ASIO.
+ *
+ * This header declares the RESTCore::Client helper class which provides a
+ * minimal, blocking API for issuing HTTP(S) requests. It is intentionally
+ * small and dependency-light, suitable for tests, tools, and simple apps.
+ */
+
 #include <string>
 #include <tuple>
 #include <map>
@@ -12,12 +21,35 @@
 
 namespace RESTCore {
 
+/**
+ * \brief Minimal synchronous HTTP/HTTPS client utilities.
+ *
+ * The Client exposes static convenience methods for common HTTP verbs. Two
+ * sets of overloads are available:
+ * - host/port/target form where you explicitly choose HTTPS via a boolean
+ * - URL form that accepts basic http(s):// URLs and infers the scheme/port
+ *
+ * The functions return a tuple of (status_code, response). Status code is an
+ * unsigned integer (e.g., 200) copied from the Boost.Beast response object.
+ *
+ * Exceptions:
+ * - Network, DNS, TLS, or protocol errors are reported via thrown exceptions
+ *   (std::system_error, boost::system::system_error, std::invalid_argument for
+ *   bad URLs, etc.). Callers may handle exceptions to detect failures.
+ *
+ * Thread-safety: All functions are re-entrant; they do not share state.
+ */
 class Client {
 public:
+    /// Case-insensitive headers are not required here; we use std::map for simplicity.
     using Headers = std::map<std::string, std::string>;
+    /// HTTP response type with a string body.
     using Response = boost::beast::http::response<boost::beast::http::string_body>;
 
-    // Synchronous helpers by verb (host/port/target form)
+    /**
+     * \name Synchronous helpers by verb (host/port/target form)
+     * @{ */
+    /** Issue an HTTP HEAD request. */
     static std::tuple<unsigned, Response>
     Head(bool https,
          const std::string& host,
@@ -25,6 +57,7 @@ public:
          const std::string& target,
          const Headers& headers = {});
 
+    /** Issue an HTTP GET request. */
     static std::tuple<unsigned, Response>
     Get(bool https,
         const std::string& host,
@@ -32,6 +65,7 @@ public:
         const std::string& target,
         const Headers& headers = {});
 
+    /** Issue an HTTP DELETE request. */
     static std::tuple<unsigned, Response>
     Delete(bool https,
            const std::string& host,
@@ -39,6 +73,7 @@ public:
            const std::string& target,
            const Headers& headers = {});
 
+    /** Issue an HTTP POST request with an optional body and content-type. */
     static std::tuple<unsigned, Response>
     Post(bool https,
          const std::string& host,
@@ -48,6 +83,7 @@ public:
          const std::string& content_type = "application/json",
          const Headers& headers = {});
 
+    /** Issue an HTTP PUT request with an optional body and content-type. */
     static std::tuple<unsigned, Response>
     Put(bool https,
         const std::string& host,
@@ -56,8 +92,12 @@ public:
         const std::string& body,
         const std::string& content_type = "application/json",
         const Headers& headers = {});
+    /** @} */
 
-    // URL convenience overloads (basic http/https URL support)
+    /**
+     * \name URL convenience overloads
+     * Basic http(s)://host[:port][/path?query] support.
+     * @{ */
     static std::tuple<unsigned, Response>
     Head(const std::string& url, const Headers& headers = {});
 
@@ -78,10 +118,17 @@ public:
         const std::string& body,
         const std::string& content_type = "application/json",
         const Headers& headers = {});
+    /** @} */
 
 private:
     using tcp = boost::asio::ip::tcp;
 
+    /**
+     * \brief Internal request dispatch used by all verb helpers.
+     *
+     * Constructs a Beast request, connects (with or without TLS), sends the
+     * request, and reads a full response into memory.
+     */
     static std::tuple<unsigned, Response>
     request(bool https,
             boost::beast::http::verb method,
@@ -92,7 +139,10 @@ private:
             const std::string* body,
             const std::string* content_type);
 
+    /// Parsed representation of a small subset of URLs supported by the URL overloads.
     struct ParsedUrl { bool https; std::string host; std::string port; std::string target; };
+
+    /** Parse a basic http(s) URL. Throws std::invalid_argument on invalid input. */
     static ParsedUrl parseUrl(const std::string& url);
 };
 

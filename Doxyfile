@@ -1,0 +1,70 @@
+# Doxyfile for RESTCore
+# Minimal configuration focused on generating HTML API docs from headers/sources.
+
+# Project
+PROJECT_NAME           = "RESTCore"
+PROJECT_NUMBER         = "1.0"
+PROJECT_BRIEF          = "Minimal HTTP/HTTPS client and server built on Boost.Beast/ASIO"
+OUTPUT_DIRECTORY       = docs
+CREATE_SUBDIRS         = NO
+OUTPUT_LANGUAGE        = English
+BRIEF_MEMBER_DESC      = YES
+REPEAT_BRIEF           = YES
+ALWAYS_DETAILED_SEC    = NO
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = \
+  . \
+  include \
+  src
+STRIP_FROM_INC_PATH    = include
+JAVADOC_AUTOBRIEF      = YES
+OPTIMIZE_OUTPUT_FOR_C  = NO
+OPTIMIZE_OUTPUT_JAVA   = NO
+OPTIMIZE_FOR_FORTRAN   = NO
+OPTIMIZE_OUTPUT_VHDL   = NO
+MARKDOWN_SUPPORT       = YES
+TOC_INCLUDE_HEADINGS   = 3
+INLINE_INHERITED_MEMB  = YES
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+
+# Input
+INPUT                  = \
+  README.md \
+  include \
+  src
+FILE_PATTERNS          = *.hpp *.h *.cpp *.md
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */cmake-build-*/* */.git/*
+USE_MDFILE_AS_MAINPAGE = README.md
+
+# Source browsing
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+REFERENCES_LINK_SOURCE = YES
+GENERATE_TREEVIEW      = YES
+
+# Extraction
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+EXTRACT_LOCAL_CLASSES  = YES
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+
+# HTML
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_TIMESTAMP         = YES
+GENERATE_LATEX         = NO
+
+# Diagrams (disabled by default to avoid Graphviz dependency)
+HAVE_DOT               = NO
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+DOT_IMAGE_FORMAT       = svg

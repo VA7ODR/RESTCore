@@ -1,5 +1,14 @@
 #pragma once
 
+/**
+ * \file Server.hpp
+ * \brief Simple synchronous HTTP/HTTPS server built on Boost.Beast/ASIO.
+ *
+ * The RESTCore::Server accepts connections on configured endpoints and invokes
+ * a user-provided callback per request, letting the user fill a response.
+ * It is designed for tests and small tools rather than production loads.
+ */
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -20,69 +29,82 @@ namespace ssl   = net::ssl;
 
 namespace RESTCore {
 
-// A minimal multi-connection HTTP(S) host that accepts incoming connections
-// and invokes a user callback for each request, providing references to the
-// Beast HTTP request and response, and the client endpoint address. The
-// callback returns void; the server then replies with the response object
-// that the callback modified.
-//
-// Notes:
-// - Simple, synchronous per-connection handling on individual threads.
-// - Each listener (HTTP/HTTPS) runs an accept loop on its own thread.
-// - One request per connection (no keep-alive handling).
-// - HTTPS requires certificate and private key files.
+/**
+ * \brief Minimal multi-connection HTTP(S) host.
+ *
+ * Behavior and limitations:
+ * - One thread per listener (HTTP or HTTPS) running a blocking accept loop.
+ * - A new session thread per accepted connection. Each session handles exactly
+ *   one request/response cycle and closes the connection (no keep-alive).
+ * - HTTPS listeners require PEM certificate and private key files.
+ * - The server is intended for functional tests and small utilities.
+ */
 class Server {
 public:
+    /// Request type exposed to the user callback.
     using Request  = http::request<http::string_body>;
+    /// Response type that the user callback should modify.
     using Response = http::response<http::string_body>;
 
-    // Callback signature: the server provides:
-    // - const Request& req
-    // - Response& res (modify to set status/body/headers)
-    // - const std::string& client_address (ip[:port] string)
+    /**
+     * \brief Request handler signature.
+     *
+     * The server provides:
+     * - const Request& req: the parsed HTTP request
+     * - Response& res: modify this to set status, headers and body
+     * - const std::string& client_address: textual ip[:port]
+     */
     using Callback = std::function<void(const Request&, Response&, const std::string&)>;
 
+    /// Construct an idle server without listeners.
     Server();
+    /// Destructor stops listeners and joins threads when possible.
     ~Server();
 
-    // Set the request handler callback. Must be set before start().
+    /** Set the request handler callback. Must be set before start(). */
     void set_callback(Callback cb);
 
-    // Queue an HTTP listener on address:port (e.g., "0.0.0.0", 8080).
+    /** Queue an HTTP listener on address:port (e.g., "0.0.0.0", 8080). */
     void listen_http(const std::string& address, unsigned short port);
 
-    // Queue an HTTPS listener on address:port with certificate and key files.
-    // cert_file: PEM certificate chain
-    // key_file:  PEM private key
+    /**
+     * Queue an HTTPS listener on address:port.
+     *
+     * \param cert_file Path to a PEM certificate chain file.
+     * \param key_file  Path to a PEM private key file.
+     */
     void listen_https(const std::string& address,
                       unsigned short port,
                       const std::string& cert_file,
                       const std::string& key_file);
 
-    // Start all configured listeners. Returns immediately.
+    /** Start all configured listeners. Non-blocking. */
     void start();
 
-    // Stop all listeners and attempt to join threads.
+    /** Stop all listeners and attempt to join their threads. Idempotent. */
     void stop();
 
 private:
+    /// Configuration for an HTTP listener.
     struct HttpListenerCfg {
-        std::string address;
-        unsigned short port{};
+        std::string address;           ///< Bind address (e.g., "127.0.0.1").
+        unsigned short port{};         ///< TCP port.
     };
 
+    /// Configuration for an HTTPS listener.
     struct HttpsListenerCfg {
-        std::string address;
-        unsigned short port{};
-        std::string cert_file;
-        std::string key_file;
+        std::string address;           ///< Bind address.
+        unsigned short port{};         ///< TCP port.
+        std::string cert_file;         ///< PEM certificate chain.
+        std::string key_file;          ///< PEM private key.
     };
 
+    /// Runtime data for a running listener.
     struct ListenerRuntime {
-        std::thread thread;
-        std::atomic<bool> running{false};
-        std::string address;
-        unsigned short port{0};
+        std::thread thread;            ///< Background thread running accept loop.
+        std::atomic<bool> running{false}; ///< Set true while accept loop is active.
+        std::string address;           ///< Bound address for diagnostics.
+        unsigned short port{0};        ///< Bound port for diagnostics.
     };
 
     // Configured endpoints

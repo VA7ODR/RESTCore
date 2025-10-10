@@ -57,3 +57,16 @@ target_link_libraries(http_smoke_test PRIVATE RESTCore)
 
 # Register with CTest
 add_test(NAME http_smoke_test COMMAND http_smoke_test --catch_system_errors=no)
+
+# --- Doxygen docs target (optional) ---
+find_package(Doxygen QUIET)
+if(DOXYGEN_FOUND)
+    set(DOXYGEN_IN ${CMAKE_SOURCE_DIR}/Doxyfile)
+    if(EXISTS ${DOXYGEN_IN})
+        add_custom_target(docs
+            COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_IN}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Generating API documentation with Doxygen"
+            VERBATIM)
+    endif()
+endif()

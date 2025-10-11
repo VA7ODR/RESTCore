@@ -41,6 +41,8 @@ var NAVTREE =
     [ "License", "index.html#autotoc_md12", null ],
     [ "OpenAPI → C++ codegen (using RESTCore)", "index.html#autotoc_md13", null ],
     [ "OpenAPI code generator (MVP scaffold)", "index.html#autotoc_md14", null ],
+    [ "OpenAPI echo example (server + client)", "index.html#autotoc_md15", null ],
+    [ "OpenAPI generated example (using openapi_codegen)", "index.html#autotoc_md16", null ],
     [ "Classes", "annotated.html", [
       [ "Class List", "annotated.html", "annotated_dup" ],
       [ "Class Index", "classes.html", null ],

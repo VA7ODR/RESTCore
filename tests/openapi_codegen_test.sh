@@ -9,6 +9,7 @@ OUT_DIR="$3"
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
+# ---------------------- JSON spec (petstore.json) ----------------------
 # Run generator
 "$GEN_BIN" --input "$SPEC_FILE" --output "$OUT_DIR"
 
@@ -47,4 +48,43 @@ grep -q "class Request" "$SERVER_HPP"
 grep -q "class Response" "$SERVER_HPP"
 grep -q "struct Handlers" "$SERVER_HPP"
 
-echo "openapi_codegen test passed: generated files and contents look correct."
+# ---------------------- YAML spec (tiny.yaml) ----------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+YAML_SPEC="$SCRIPT_DIR/data/tiny.yaml"
+
+# Run generator on YAML fixture (should produce Tiny_API namespace)
+"$GEN_BIN" --input "$YAML_SPEC" --output "$OUT_DIR"
+
+API_DIR_YAML="$OUT_DIR/include/RESTCore_Tiny_API"
+JSON_HPP_YAML="$API_DIR_YAML/json_backend.hpp"
+CLIENT_HPP_YAML="$API_DIR_YAML/Client.hpp"
+SERVER_HPP_YAML="$API_DIR_YAML/Server.hpp"
+
+# Validate files exist for YAML-generated API
+[ -d "$API_DIR_YAML" ] || { echo "Expected directory not found: $API_DIR_YAML"; exit 1; }
+[ -f "$JSON_HPP_YAML" ] || { echo "Missing file: $JSON_HPP_YAML"; exit 1; }
+[ -f "$CLIENT_HPP_YAML" ] || { echo "Missing file: $CLIENT_HPP_YAML"; exit 1; }
+[ -f "$SERVER_HPP_YAML" ] || { echo "Missing file: $SERVER_HPP_YAML"; exit 1; }
+
+# Validate namespace for YAML-derived API name: "Tiny API" -> Tiny_API
+grep -q "namespace RESTCore_Tiny_API" "$JSON_HPP_YAML"
+grep -q "namespace RESTCore_Tiny_API" "$CLIENT_HPP_YAML"
+grep -q "namespace RESTCore_Tiny_API" "$SERVER_HPP_YAML"
+
+# Common content checks
+grep -q "#include <nlohmann/json.hpp>" "$JSON_HPP_YAML"
+grep -q "struct Json" "$JSON_HPP_YAML"
+
+grep -q "class Client" "$CLIENT_HPP_YAML"
+grep -q "class Message" "$CLIENT_HPP_YAML"
+grep -q "class Request" "$CLIENT_HPP_YAML"
+grep -q "class Response" "$CLIENT_HPP_YAML"
+
+grep -q "struct Server" "$SERVER_HPP_YAML"
+grep -q "class Message" "$SERVER_HPP_YAML"
+grep -q "class Request" "$SERVER_HPP_YAML"
+grep -q "class Response" "$SERVER_HPP_YAML"
+grep -q "struct Handlers" "$SERVER_HPP_YAML"
+
+
+echo "openapi_codegen test passed: JSON and YAML generation verified."

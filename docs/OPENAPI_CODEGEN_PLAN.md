@@ -147,3 +147,8 @@ Update (2025-10-10)
   - Usage: openapi_codegen --output <dir> [--input <openapi.(json|yaml)>] [--name <ApiName>]
   - It generates headers: include/RESTCore_<ApiName>/json_backend.hpp, Client.hpp, and Server.hpp.
   - The generator itself has no dependency on nlohmann/json; the generated code references it by include and expects the consumer project to provide it.
+
+Status (2025-10-10)
+- PR1 completed: Canonical model skeleton in place, loader supports JSON and a minimal subset of YAML (sufficient for fixtures/tests), and an in-document $ref resolver inlines `#/components/schemas/*`.
+- Tests updated: `tests/openapi_codegen_test.sh` now exercises both JSON (petstore.json) and YAML (tests/data/tiny.yaml) inputs and validates generated namespaces and markers.
+- Scope guardrails remain: external `$ref` (file/URL), complex YAML features (anchors, inline maps), and advanced schema composition (oneOf/anyOf/allOf) are out-of-scope for MVP and deferred to later phases.

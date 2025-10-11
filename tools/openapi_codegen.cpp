@@ -13,6 +13,9 @@
 #include <utility>
 #include <vector>
 #include <filesystem>
+#include <cstring>
+// For JSON parsing of OpenAPI specs and intermediate canonical model
+#include <nlohmann/json.hpp>
 
 namespace fs = std::filesystem;
 
@@ -383,6 +386,204 @@ std::string gen_server_hpp(const std::string& apiName) {
     return oss.str();
 }
 
+// ---- Canonical model skeleton + loader (PR1) ----------------------------------
+
+struct OAInfo { std::string title; std::string version; };
+
+struct OADocument {
+    std::string openapi_version;
+    OAInfo info;
+    nlohmann::json raw;       // Original parsed doc
+    nlohmann::json resolved;  // Copy with in-doc $ref resolved (subset)
+};
+
+static bool is_yaml_path(const fs::path& p) {
+    auto ext = p.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return std::tolower(c); });
+    return (ext == ".yaml" || ext == ".yml");
+}
+
+// Extremely small YAML parser for a tiny subset: mappings and sequences with scalar values.
+// Intended only to support simple fixtures. Complex YAML (anchors, inline maps {a:b}, multi-line blocks)
+// is not supported and will throw.
+static nlohmann::json parse_yaml_minimal(const std::string& text) {
+    struct Node { enum Kind{Obj, Arr, Str} kind; nlohmann::json j; int indent; };
+    std::vector<Node> stack;
+    auto push_obj = [&](int ind){ stack.push_back({Node::Obj, nlohmann::json::object(), ind}); };
+    auto push_arr = [&](int ind){ stack.push_back({Node::Arr, nlohmann::json::array(),  ind}); };
+
+    auto to_scalar = [](std::string v)->nlohmann::json{
+        v = trim(v);
+        if (v.empty()) return nlohmann::json("");
+        if ((v.front()=='"' && v.back()=='"') || (v.front()=='\'' && v.back()=='\'')) {
+            if (v.size()>=2) return v.substr(1, v.size()-2);
+        }
+        // bools
+        if (v == "true") return true; if (v=="false") return false;
+        // null
+        if (v == "null" || v == "~") return nullptr;
+        // fallback string (strip trailing # comments)
+        auto hash = v.find(" #"); if (hash != std::string::npos) v = v.substr(0, hash);
+        return v;
+    };
+
+    auto count_indent = [](const std::string& s){ int n=0; for(char c: s){ if(c==' ') ++n; else break; } return n; };
+
+    std::istringstream iss(text);
+    std::string line;
+    int line_no = 0;
+    while (std::getline(iss, line)) {
+        ++line_no;
+        // strip CR
+        if (!line.empty() && line.back()=='\r') line.pop_back();
+        std::string trimmed = trim(line);
+        if (trimmed.empty()) continue;
+        if (trimmed.size()>=1 && trimmed[0]=='#') continue;
+        int ind = count_indent(line);
+
+        // collapse stack to current indentation
+        while (!stack.empty() && ind < stack.back().indent) {
+            auto node = stack.back(); stack.pop_back();
+            if (stack.empty()) { stack.push_back(node); break; }
+            auto& parent = stack.back();
+            if (parent.kind == Node::Arr) {
+                parent.j.push_back(node.j);
+            } else if (parent.kind == Node::Obj) {
+                // previous key was added as placeholder; nothing to do here
+            }
+        }
+
+        // sequence item?
+        if (trimmed.rfind("- ", 0) == 0) {
+            std::string rest = trimmed.substr(2);
+            if (stack.empty() || stack.back().kind != Node::Arr || stack.back().indent != ind) {
+                // start a new array at this indent
+                push_arr(ind);
+            }
+            if (rest.find(':') != std::string::npos) {
+                // object item in array
+                push_obj(ind + 2);
+                // fall through to mapping parse
+                trimmed = rest;
+                ind += 2;
+            } else {
+                // scalar item
+                stack.back().j.push_back(to_scalar(rest));
+                continue;
+            }
+        }
+
+        // mapping line key: value
+        auto pos = trimmed.find(':');
+        if (pos == std::string::npos) {
+            throw std::runtime_error("Unsupported YAML syntax at line " + std::to_string(line_no) + ": " + trimmed);
+        }
+        std::string key = trim(trimmed.substr(0, pos));
+        std::string val = trim(trimmed.substr(pos+1));
+        if (val == "|") {
+            throw std::runtime_error("YAML block scalars not supported in minimal parser");
+        }
+        // ensure object at this indent
+        if (stack.empty() || stack.back().kind != Node::Obj || stack.back().indent != ind) {
+            push_obj(ind);
+        }
+        auto& obj = stack.back().j;
+        if (val.empty()) {
+            // nested block follows
+            obj[key] = nlohmann::json::object();
+            // descend
+            push_obj(ind + 2);
+        } else {
+            // simple scalar value
+            // Inline objects/arrays like { a: b } or [1,2] not supported in minimal mode
+            if (!val.empty() && (val.front()=='{' || val.front()=='[')) {
+                throw std::runtime_error("Inline YAML collections are not supported in minimal parser");
+            }
+            obj[key] = to_scalar(val);
+        }
+    }
+
+    // collapse remaining stack
+    while (stack.size() > 1) {
+        auto node = stack.back(); stack.pop_back();
+        auto& parent = stack.back();
+        if (parent.kind == Node::Arr) parent.j.push_back(node.j);
+        // if parent is object, nodes were already attached by key assignment
+    }
+    if (stack.empty()) return nlohmann::json::object();
+    return stack.front().j;
+}
+
+static nlohmann::json parse_spec_file(const fs::path& p) {
+    auto data_opt = read_file(p);
+    if (!data_opt) throw std::runtime_error("Failed to read input: " + p.string());
+    const std::string& data = *data_opt;
+    // Heuristic by extension, but allow braces to force JSON
+    bool as_yaml = is_yaml_path(p);
+    if (!as_yaml) {
+        // also detect leading '{'
+        std::string s = trim(std::string(data));
+        if (!s.empty() && s.front()!='{') {
+            // still JSON possibly without leading brace? assume JSON when extension is .json
+        }
+    }
+    if (as_yaml) {
+        return parse_yaml_minimal(data);
+    }
+    // JSON
+    return nlohmann::json::parse(data);
+}
+
+static void resolve_in_doc_refs(nlohmann::json& doc) {
+    // Textually inline {"$ref":"#/components/schemas/<Name>"} occurrences with the
+    // corresponding schema object from components.schemas. This covers the common
+    // case where a $ref object has no siblings.
+    if (!(doc.contains("components") && doc["components"].contains("schemas"))) return;
+    auto& schemas = doc["components"]["schemas"];
+    std::string json_text = doc.dump();
+
+    // Collect referenced schema names
+    std::set<std::string> names;
+    std::regex re(R"REGEX(#/components/schemas/([A-Za-z0-9_\-\.]+))REGEX");
+    for (std::sregex_iterator it(json_text.begin(), json_text.end(), re), end; it != end; ++it) {
+        names.insert((*it)[1].str());
+    }
+
+    auto replace_all = [](std::string& s, const std::string& from, const std::string& to){
+        if (from.empty()) return;
+        std::size_t pos = 0;
+        while ((pos = s.find(from, pos)) != std::string::npos) {
+            s.replace(pos, from.size(), to);
+            pos += to.size();
+        }
+    };
+
+    for (const auto& name : names) {
+        if (!schemas.contains(name)) continue;
+        std::string needle = std::string("{\"$ref\":\"#/components/schemas/") + name + "\"}";
+        std::string repl   = schemas[name].dump();
+        replace_all(json_text, needle, repl);
+    }
+
+    // Re-parse back to JSON
+    doc = nlohmann::json::parse(json_text);
+}
+
+static OADocument load_openapi_document(const fs::path& p) {
+    nlohmann::json doc = parse_spec_file(p);
+    OADocument out;
+    out.raw = doc;
+    if (doc.contains("openapi")) out.openapi_version = doc["openapi"].get<std::string>();
+    if (doc.contains("info")) {
+        auto& info = doc["info"];
+        if (info.contains("title")) out.info.title = info["title"].get<std::string>();
+        if (info.contains("version")) out.info.version = info["version"].get<std::string>();
+    }
+    out.resolved = doc; // deep copy
+    resolve_in_doc_refs(out.resolved);
+    return out;
+}
+
 void print_usage(const char* argv0) {
     std::cerr << "Usage: " << argv0 << " --output <dir> [--input <openapi.(json|yaml)>] [--name <ApiName>]\n";
     std::cerr << "\nNotes:\n";
@@ -419,6 +620,23 @@ int main(int argc, char** argv) {
 
     fs::path out = *args.output;
     fs::path baseInclude = out / "include" / (std::string{"RESTCore_"} + apiName);
+
+    // PR1: If an input spec is provided, load and resolve it now (no codegen usage yet).
+    if (args.input) {
+        try {
+            OADocument doc = load_openapi_document(*args.input);
+            std::size_t path_count = 0;
+            if (doc.raw.contains("paths") && doc.raw["paths"].is_object()) path_count = doc.raw["paths"].size();
+            std::size_t schema_count = 0;
+            if (doc.raw.contains("components") && doc.raw["components"].contains("schemas") && doc.raw["components"]["schemas"].is_object()) {
+                schema_count = doc.raw["components"]["schemas"].size();
+            }
+            std::cout << "Loaded OpenAPI " << doc.openapi_version << ": '" << doc.info.title << "' v" << doc.info.version
+                      << " (paths=" << path_count << ", schemas=" << schema_count << ")\n";
+        } catch (const std::exception& ex) {
+            std::cerr << "Warning: failed to load/parse spec '" << args.input->string() << "': " << ex.what() << "\n";
+        }
+    }
 
     try {
         write_text_file(baseInclude / "json_backend.hpp", gen_json_backend_hpp(apiName));

@@ -80,6 +80,12 @@ add_executable(openapi_codegen
 # Require C++20 for the tool as well
 set_property(TARGET openapi_codegen PROPERTY CXX_STANDARD 20)
 set_property(TARGET openapi_codegen PROPERTY CXX_STANDARD_REQUIRED ON)
+# Provide access to header-only third_party JSON for the tool
+# Reuse the vendored nlohmann/json single header from the generated example
+# to avoid adding a new dependency just for the tool.
+target_include_directories(openapi_codegen PRIVATE
+    ${CMAKE_SOURCE_DIR}/examples/openapi_generated/third_party
+)
 
 # --- Optional: OpenAPI Echo example apps (server/client) ---
 option(RESTCORE_BUILD_OPENAPI_ECHO_EXAMPLE "Build the OpenAPI 'echo/motd' example server and client" OFF)

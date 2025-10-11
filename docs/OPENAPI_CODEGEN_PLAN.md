@@ -145,7 +145,7 @@ Update (2025-10-10)
     - If empty, use 'Api'
 - Tooling: Added a minimal generator executable openapi_codegen (MVP scaffold).
   - Usage: openapi_codegen --output <dir> [--input <openapi.(json|yaml)>] [--name <ApiName>]
-  - It generates headers: include/RESTCore_<ApiName>/json_backend.hpp, Client.hpp, and Server.hpp.
+  - It generates headers: include/RESTCore_<ApiName>/json_backend.hpp, Client.hpp, Server.hpp, and models.hpp.
   - The generator itself has no dependency on nlohmann/json; the generated code references it by include and expects the consumer project to provide it.
 
 

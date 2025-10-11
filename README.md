@@ -181,10 +181,11 @@ A minimal generator executable is available as the target `openapi_codegen`.
 
 What it does (today):
 - Derives an `ApiName` from `info.title` in the spec (or from the file name), sanitizes it to a C++-safe identifier, and creates a namespace scope `RESTCore_ApiName`.
-- Emits three headers under the output directory:
+- Emits headers under the output directory:
   - include/RESTCore_`ApiName`/json_backend.hpp — a small adapter that uses nlohmann::json by default (backend-swappable in principle)
   - include/RESTCore_`ApiName`/Client.hpp — a client facade with nested JSON-backed message types: `class Message`, `class Request`, `class Response`
   - include/RESTCore_`ApiName`/Server.hpp — a server facade with nested message types and a `struct Handlers` interface (one virtual per operation will be generated later)
+  - include/RESTCore_`ApiName`/models.hpp — PR2 minimal stub for model types; placeholder to be populated from schemas with to_json/from_json in subsequent work
 
 Message classes are JSON-backed but present a JSON-agnostic API:
 - Presence check: `bool has(const std::string& key) const`

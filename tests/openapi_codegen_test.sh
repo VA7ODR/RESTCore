@@ -17,12 +17,14 @@ API_DIR="$OUT_DIR/include/RESTCore_Pet_Store"
 JSON_HPP="$API_DIR/json_backend.hpp"
 CLIENT_HPP="$API_DIR/Client.hpp"
 SERVER_HPP="$API_DIR/Server.hpp"
+MODELS_HPP="$API_DIR/models.hpp"
 
 # Validate files exist
 [ -d "$API_DIR" ] || { echo "Expected directory not found: $API_DIR"; exit 1; }
 [ -f "$JSON_HPP" ] || { echo "Missing file: $JSON_HPP"; exit 1; }
 [ -f "$CLIENT_HPP" ] || { echo "Missing file: $CLIENT_HPP"; exit 1; }
 [ -f "$SERVER_HPP" ] || { echo "Missing file: $SERVER_HPP"; exit 1; }
+[ -f "$MODELS_HPP" ] || { echo "Missing file: $MODELS_HPP"; exit 1; }
 
 # Validate basic content
 # Namespace should reflect sanitized title: "Pet Store" -> Pet_Store
@@ -59,12 +61,14 @@ API_DIR_YAML="$OUT_DIR/include/RESTCore_Tiny_API"
 JSON_HPP_YAML="$API_DIR_YAML/json_backend.hpp"
 CLIENT_HPP_YAML="$API_DIR_YAML/Client.hpp"
 SERVER_HPP_YAML="$API_DIR_YAML/Server.hpp"
+MODELS_HPP_YAML="$API_DIR_YAML/models.hpp"
 
 # Validate files exist for YAML-generated API
 [ -d "$API_DIR_YAML" ] || { echo "Expected directory not found: $API_DIR_YAML"; exit 1; }
 [ -f "$JSON_HPP_YAML" ] || { echo "Missing file: $JSON_HPP_YAML"; exit 1; }
 [ -f "$CLIENT_HPP_YAML" ] || { echo "Missing file: $CLIENT_HPP_YAML"; exit 1; }
 [ -f "$SERVER_HPP_YAML" ] || { echo "Missing file: $SERVER_HPP_YAML"; exit 1; }
+[ -f "$MODELS_HPP_YAML" ] || { echo "Missing file: $MODELS_HPP_YAML"; exit 1; }
 
 # Validate namespace for YAML-derived API name: "Tiny API" -> Tiny_API
 grep -q "namespace RESTCore_Tiny_API" "$JSON_HPP_YAML"

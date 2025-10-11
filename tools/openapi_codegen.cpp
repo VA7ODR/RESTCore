@@ -386,6 +386,25 @@ std::string gen_server_hpp(const std::string& apiName) {
     return oss.str();
 }
 
+// ---- PR2: Minimal models code generation (enums + primitive aliases) ----
+
+std::string gen_models_hpp(const std::string& apiName, const nlohmann::json& /*resolvedDoc*/) {
+    std::ostringstream oss;
+    oss << header_prologue();
+    oss << "/**\\file\n"
+           " \\brief Generated model types (PR2 minimal stub).\n"
+           "\n"
+           " This MVP stub will be replaced with schema-driven models in a follow-up PR.\n"
+           "*/\n\n";
+    oss << "#include <string>\n#include <cstdint>\n#include <optional>\n";
+    oss << "#include <RESTCore_" << apiName << "/json_backend.hpp>\n\n";
+    oss << "namespace RESTCore_" << apiName << " {\n";
+    oss << "// TODO(PR2): emit enums, primitive aliases, and object structs with to_json/from_json.\n";
+    oss << "} // namespace RESTCore_" << apiName << "\n";
+    return oss.str();
+}
+
+
 // ---- Canonical model skeleton + loader (PR1) ----------------------------------
 
 struct OAInfo { std::string title; std::string version; };
@@ -621,17 +640,18 @@ int main(int argc, char** argv) {
     fs::path out = *args.output;
     fs::path baseInclude = out / "include" / (std::string{"RESTCore_"} + apiName);
 
-    // PR1: If an input spec is provided, load and resolve it now (no codegen usage yet).
+    // PR1: If an input spec is provided, load and resolve it now.
+    std::optional<OADocument> loaded;
     if (args.input) {
         try {
-            OADocument doc = load_openapi_document(*args.input);
+            loaded = load_openapi_document(*args.input);
             std::size_t path_count = 0;
-            if (doc.raw.contains("paths") && doc.raw["paths"].is_object()) path_count = doc.raw["paths"].size();
+            if (loaded->raw.contains("paths") && loaded->raw["paths"].is_object()) path_count = loaded->raw["paths"].size();
             std::size_t schema_count = 0;
-            if (doc.raw.contains("components") && doc.raw["components"].contains("schemas") && doc.raw["components"]["schemas"].is_object()) {
-                schema_count = doc.raw["components"]["schemas"].size();
+            if (loaded->raw.contains("components") && loaded->raw["components"].contains("schemas") && loaded->raw["components"]["schemas"].is_object()) {
+                schema_count = loaded->raw["components"]["schemas"].size();
             }
-            std::cout << "Loaded OpenAPI " << doc.openapi_version << ": '" << doc.info.title << "' v" << doc.info.version
+            std::cout << "Loaded OpenAPI " << loaded->openapi_version << ": '" << loaded->info.title << "' v" << loaded->info.version
                       << " (paths=" << path_count << ", schemas=" << schema_count << ")\n";
         } catch (const std::exception& ex) {
             std::cerr << "Warning: failed to load/parse spec '" << args.input->string() << "': " << ex.what() << "\n";
@@ -642,6 +662,13 @@ int main(int argc, char** argv) {
         write_text_file(baseInclude / "json_backend.hpp", gen_json_backend_hpp(apiName));
         write_text_file(baseInclude / "Client.hpp",        gen_client_hpp(apiName));
         write_text_file(baseInclude / "Server.hpp",        gen_server_hpp(apiName));
+        // PR2: models.hpp (minimal stub for now)
+        if (loaded) {
+            write_text_file(baseInclude / "models.hpp", gen_models_hpp(apiName, loaded->resolved));
+        } else {
+            nlohmann::json empty;
+            write_text_file(baseInclude / "models.hpp", gen_models_hpp(apiName, empty));
+        }
     } catch (const std::exception& ex) {
         std::cerr << "Generation failed: " << ex.what() << "\n";
         return 2;
@@ -651,6 +678,7 @@ int main(int argc, char** argv) {
     std::cout << "  - " << (baseInclude / "json_backend.hpp") << "\n";
     std::cout << "  - " << (baseInclude / "Client.hpp") << "\n";
     std::cout << "  - " << (baseInclude / "Server.hpp") << "\n";
+    std::cout << "  - " << (baseInclude / "models.hpp") << "\n";
 
     return 0;
 }

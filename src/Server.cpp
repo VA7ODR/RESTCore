@@ -1,5 +1,6 @@
 #include "RESTCore/Server.hpp"
 
+#include <exception>
 #include <fstream>
 #include <iostream>
 
@@ -11,6 +12,10 @@ namespace http = beast::http;
 
 RESTCore::Server::Server() = default;
 RESTCore::Server::~Server() { stop(); }
+
+void RESTCore::Server::set_keep_alive_enabled(bool enabled) {
+    keep_alive_enabled_ = enabled;
+}
 
 void RESTCore::Server::set_callback(Callback cb) { callback_ = std::move(cb); }
 
@@ -33,8 +38,9 @@ void RESTCore::Server::start() {
         rt->address = cfg.address;
         rt->port = cfg.port;
         auto cb = callback_;
-        rt->thread = std::thread([rt_ptr = rt.get(), cb, cfg]() mutable {
-            http_accept_loop(rt_ptr, cb, cfg.address, cfg.port);
+        bool keep_alive = keep_alive_enabled_;
+        rt->thread = std::thread([rt_ptr = rt.get(), cb, cfg, keep_alive]() mutable {
+            http_accept_loop(rt_ptr, cb, cfg.address, cfg.port, keep_alive);
         });
         http_runtimes_.push_back(std::move(rt));
     }
@@ -46,8 +52,15 @@ void RESTCore::Server::start() {
         rt->address = cfg.address;
         rt->port = cfg.port;
         auto cb = callback_;
-        rt->thread = std::thread([rt_ptr = rt.get(), cb, cfg]() mutable {
-            https_accept_loop(rt_ptr, cb, cfg.address, cfg.port, cfg.cert_file, cfg.key_file);
+        bool keep_alive = keep_alive_enabled_;
+        rt->thread = std::thread([rt_ptr = rt.get(), cb, cfg, keep_alive]() mutable {
+            https_accept_loop(rt_ptr,
+                              cb,
+                              cfg.address,
+                              cfg.port,
+                              cfg.cert_file,
+                              cfg.key_file,
+                              keep_alive);
         });
         https_runtimes_.push_back(std::move(rt));
     }
@@ -97,7 +110,8 @@ void RESTCore::Server::stop() {
 void RESTCore::Server::http_accept_loop(ListenerRuntime* rt,
                                       Callback cb,
                                       std::string address,
-                                      unsigned short port) {
+                                      unsigned short port,
+                                      bool keep_alive_enabled) {
     try {
         net::io_context ioc;
         tcp::endpoint ep{net::ip::make_address(address), port};
@@ -122,7 +136,11 @@ void RESTCore::Server::http_accept_loop(ListenerRuntime* rt,
                 socket.close(ignore_ec);
                 break;
             }
-            std::thread(&RESTCore::Server::handle_http_session, std::move(socket), cb).detach();
+            std::thread(&RESTCore::Server::handle_http_session,
+                        std::move(socket),
+                        cb,
+                        keep_alive_enabled)
+                .detach();
         }
     } catch (const std::exception& e) {
         // Log and exit loop
@@ -135,7 +153,8 @@ void RESTCore::Server::https_accept_loop(ListenerRuntime* rt,
                                        std::string address,
                                        unsigned short port,
                                        std::string cert_file,
-                                       std::string key_file) {
+                                       std::string key_file,
+                                       bool keep_alive_enabled) {
     try {
         net::io_context ioc;
         tcp::endpoint ep{net::ip::make_address(address), port};
@@ -165,7 +184,12 @@ void RESTCore::Server::https_accept_loop(ListenerRuntime* rt,
                 socket.close(ignore_ec);
                 break;
             }
-            std::thread(&RESTCore::Server::handle_https_session, std::move(socket), cb, ctx).detach();
+            std::thread(&RESTCore::Server::handle_https_session,
+                        std::move(socket),
+                        cb,
+                        ctx,
+                        keep_alive_enabled)
+                .detach();
         }
     } catch (const std::exception& e) {
         // Log and exit loop
@@ -180,27 +204,61 @@ static std::string remote_addr_string(const tcp::socket& s) {
     return ep.address().to_string() + ":" + std::to_string(ep.port());
 }
 
-void RESTCore::Server::handle_http_session(tcp::socket socket, Callback cb) {
+void RESTCore::Server::handle_http_session(tcp::socket socket,
+                                          Callback cb,
+                                          bool keep_alive_enabled) {
     try {
         beast::tcp_stream stream{std::move(socket)};
         beast::flat_buffer buffer;
-        RESTCore::Server::Request req;
-        http::read(stream, buffer, req);
 
-        RESTCore::Server::Response res{http::status::ok, req.version()};
-        res.set(http::field::server, std::string{"HTTPServerHost/1.0"});
-        res.keep_alive(false);
+        while (true) {
+            RESTCore::Server::Request req;
+            boost::system::error_code ec;
+            http::read(stream, buffer, req, ec);
+            if (ec == http::error::end_of_stream) {
+                break;
+            }
+            if (ec) {
+                break;
+            }
 
-        const std::string client = remote_addr_string(stream.socket());
+            RESTCore::Server::Response res{http::status::ok, req.version()};
+            res.set(http::field::server, std::string{"HTTPServerHost/1.0"});
+            const bool client_wants_keep_alive = req.keep_alive();
+            res.keep_alive(keep_alive_enabled ? client_wants_keep_alive : false);
 
-        if (cb) cb(req, res, client);
+            const std::string client = remote_addr_string(stream.socket());
 
-        // Ensure we have content-length if body set
-        if (res.body().size() > 0 && res.find(http::field::content_length) == res.end()) {
-            res.prepare_payload();
+            if (cb) {
+                try {
+                    cb(req, res, client);
+                } catch (const std::exception& e) {
+                    res.result(http::status::internal_server_error);
+                    res.set(http::field::content_type, "text/plain");
+                    res.body() = std::string{"Handler threw exception: "} + e.what();
+                    res.keep_alive(false);
+                } catch (...) {
+                    res.result(http::status::internal_server_error);
+                    res.set(http::field::content_type, "text/plain");
+                    res.body() = "Handler threw unknown exception";
+                    res.keep_alive(false);
+                }
+            }
+
+            if (res.body().size() > 0 && res.find(http::field::content_length) == res.end()) {
+                res.prepare_payload();
+            }
+
+            const bool allow_keep_alive = keep_alive_enabled && client_wants_keep_alive && res.keep_alive();
+            res.keep_alive(allow_keep_alive);
+            res.set(http::field::connection, allow_keep_alive ? "keep-alive" : "close");
+
+            http::write(stream, res);
+
+            if (!allow_keep_alive) {
+                break;
+            }
         }
-
-        http::write(stream, res);
 
         boost::system::error_code ec;
         stream.socket().shutdown(tcp::socket::shutdown_both, ec);
@@ -211,29 +269,63 @@ void RESTCore::Server::handle_http_session(tcp::socket socket, Callback cb) {
 
 void RESTCore::Server::handle_https_session(tcp::socket socket,
                                           Callback cb,
-                                          const std::shared_ptr<ssl::context>& ssl_ctx) {
+                                          const std::shared_ptr<ssl::context>& ssl_ctx,
+                                          bool keep_alive_enabled) {
     try {
         beast::ssl_stream<beast::tcp_stream> stream{std::move(socket), *ssl_ctx};
         // Server-side TLS handshake
         stream.handshake(ssl::stream_base::server);
 
         beast::flat_buffer buffer;
-        RESTCore::Server::Request req;
-        http::read(stream, buffer, req);
 
-        RESTCore::Server::Response res{http::status::ok, req.version()};
-        res.set(http::field::server, std::string{"HTTPServerHost/1.0 (TLS)"});
-        res.keep_alive(false);
+        while (true) {
+            RESTCore::Server::Request req;
+            boost::system::error_code ec;
+            http::read(stream, buffer, req, ec);
+            if (ec == http::error::end_of_stream) {
+                break;
+            }
+            if (ec) {
+                break;
+            }
 
-        const std::string client = remote_addr_string(beast::get_lowest_layer(stream).socket());
+            RESTCore::Server::Response res{http::status::ok, req.version()};
+            res.set(http::field::server, std::string{"HTTPServerHost/1.0 (TLS)"});
+            const bool client_wants_keep_alive = req.keep_alive();
+            res.keep_alive(keep_alive_enabled ? client_wants_keep_alive : false);
 
-        if (cb) cb(req, res, client);
+            const std::string client = remote_addr_string(beast::get_lowest_layer(stream).socket());
 
-        if (res.body().size() > 0 && res.find(http::field::content_length) == res.end()) {
-            res.prepare_payload();
+            if (cb) {
+                try {
+                    cb(req, res, client);
+                } catch (const std::exception& e) {
+                    res.result(http::status::internal_server_error);
+                    res.set(http::field::content_type, "text/plain");
+                    res.body() = std::string{"Handler threw exception: "} + e.what();
+                    res.keep_alive(false);
+                } catch (...) {
+                    res.result(http::status::internal_server_error);
+                    res.set(http::field::content_type, "text/plain");
+                    res.body() = "Handler threw unknown exception";
+                    res.keep_alive(false);
+                }
+            }
+
+            if (res.body().size() > 0 && res.find(http::field::content_length) == res.end()) {
+                res.prepare_payload();
+            }
+
+            const bool allow_keep_alive = keep_alive_enabled && client_wants_keep_alive && res.keep_alive();
+            res.keep_alive(allow_keep_alive);
+            res.set(http::field::connection, allow_keep_alive ? "keep-alive" : "close");
+
+            http::write(stream, res);
+
+            if (!allow_keep_alive) {
+                break;
+            }
         }
-
-        http::write(stream, res);
 
         boost::system::error_code ec;
         stream.shutdown(ec);

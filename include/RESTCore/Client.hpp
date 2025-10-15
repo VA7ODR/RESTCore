@@ -12,6 +12,7 @@
 #include <string>
 #include <tuple>
 #include <map>
+#include <memory>
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -29,6 +30,10 @@ namespace RESTCore {
  * - host/port/target form where you explicitly choose HTTPS via a boolean
  * - URL form that accepts basic http(s):// URLs and infers the scheme/port
  *
+ * For longer conversations, construct a Client::Connection to reuse a
+ * keep-alive capable socket across multiple requests and close it explicitly
+ * when finished.
+ *
  * The functions return a tuple of (status_code, response). Status code is an
  * unsigned integer (e.g., 200) copied from the Boost.Beast response object.
  *
@@ -45,6 +50,51 @@ public:
     using Headers = std::map<std::string, std::string>;
     /// HTTP response type with a string body.
     using Response = boost::beast::http::response<boost::beast::http::string_body>;
+
+    /**
+     * \brief Persistent HTTP(S) connection helper for keep-alive interactions.
+     *
+     * Construct an instance to open a connection, issue one or more requests,
+     * and call close() (or let the destructor run) to tear it down.
+     */
+    class Connection {
+    public:
+        Connection(bool https, const std::string& host, const std::string& port);
+        ~Connection();
+
+        Connection(const Connection&) = delete;
+        Connection& operator=(const Connection&) = delete;
+        Connection(Connection&&) noexcept;
+        Connection& operator=(Connection&&) noexcept;
+
+        /// Close the underlying socket/stream. Safe to call multiple times.
+        void close(const std::string& reason = {});
+
+        /// True if the underlying stream is currently open.
+        bool is_open() const;
+
+        /// Human-readable reason describing the most recent closure.
+        /// Empty while the connection remains open.
+        const std::string& last_close_reason() const;
+
+        /// Issue a request over the persistent connection.
+        std::tuple<unsigned, Response>
+        request(boost::beast::http::verb method,
+                const std::string& target,
+                const Headers& headers = {},
+                const std::string* body = nullptr,
+                const std::string* content_type = nullptr);
+
+    private:
+        bool https_{false};
+        std::string host_;
+        std::string port_;
+        std::shared_ptr<boost::asio::io_context> ioc_;
+        std::unique_ptr<boost::beast::tcp_stream> http_stream_;
+        std::unique_ptr<boost::asio::ssl::context> ssl_ctx_;
+        std::unique_ptr<boost::beast::ssl_stream<boost::beast::tcp_stream>> https_stream_;
+        std::string close_reason_;
+    };
 
     /**
      * \name Synchronous helpers by verb (host/port/target form)
@@ -92,6 +142,34 @@ public:
         const std::string& body,
         const std::string& content_type = "application/json",
         const Headers& headers = {});
+
+    /**
+     * @name Persistent connection helpers
+     * Issue requests using a pre-established Connection (keep-alive).
+     * @{ */
+    static std::tuple<unsigned, Response>
+    Head(Connection& connection, const std::string& target, const Headers& headers = {});
+
+    static std::tuple<unsigned, Response>
+    Get(Connection& connection, const std::string& target, const Headers& headers = {});
+
+    static std::tuple<unsigned, Response>
+    Delete(Connection& connection, const std::string& target, const Headers& headers = {});
+
+    static std::tuple<unsigned, Response>
+    Post(Connection& connection,
+         const std::string& target,
+         const std::string& body,
+         const std::string& content_type = "application/json",
+         const Headers& headers = {});
+
+    static std::tuple<unsigned, Response>
+    Put(Connection& connection,
+        const std::string& target,
+        const std::string& body,
+        const std::string& content_type = "application/json",
+        const Headers& headers = {});
+    /** @} */
     /** @} */
 
     /**

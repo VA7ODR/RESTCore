@@ -34,8 +34,9 @@ namespace RESTCore {
  *
  * Behavior and limitations:
  * - One thread per listener (HTTP or HTTPS) running a blocking accept loop.
- * - A new session thread per accepted connection. Each session handles exactly
- *   one request/response cycle and closes the connection (no keep-alive).
+ * - A new session thread per accepted connection. Sessions may handle
+ *   multiple requests when keep-alive support is enabled via
+ *   set_keep_alive_enabled().
  * - HTTPS listeners require PEM certificate and private key files.
  * - The server is intended for functional tests and small utilities.
  */
@@ -60,6 +61,9 @@ public:
     Server();
     /// Destructor stops listeners and joins threads when possible.
     ~Server();
+
+    /** Enable or disable HTTP keep-alive handling (disabled by default). */
+    void set_keep_alive_enabled(bool enabled);
 
     /** Set the request handler callback. Must be set before start(). */
     void set_callback(Callback cb);
@@ -122,22 +126,28 @@ private:
     static void http_accept_loop(ListenerRuntime* rt,
                                  Callback cb,
                                  std::string address,
-                                 unsigned short port);
+                                 unsigned short port,
+                                 bool keep_alive_enabled);
 
     static void https_accept_loop(ListenerRuntime* rt,
                                   Callback cb,
                                   std::string address,
                                   unsigned short port,
                                   std::string cert_file,
-                                  std::string key_file);
+                                  std::string key_file,
+                                  bool keep_alive_enabled);
 
     // Session handlers (run on detached threads)
     static void handle_http_session(boost::asio::ip::tcp::socket socket,
-                                    Callback cb);
+                                    Callback cb,
+                                    bool keep_alive_enabled);
 
     static void handle_https_session(boost::asio::ip::tcp::socket socket,
                                      Callback cb,
-                                     const std::shared_ptr<ssl::context>& ssl_ctx);
+                                     const std::shared_ptr<ssl::context>& ssl_ctx,
+                                     bool keep_alive_enabled);
+
+    bool keep_alive_enabled_{false};
 };
 
 } // namespace RESTCore

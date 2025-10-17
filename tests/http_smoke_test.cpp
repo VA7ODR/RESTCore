@@ -5,6 +5,9 @@
 #include <chrono>
 #include <string>
 #include <csignal>
+#include <future>
+#include <memory>
+#include <mutex>
 
 #include "RESTCore/Client.hpp"
 #include "RESTCore/Server.hpp"
@@ -121,6 +124,158 @@ BOOST_AUTO_TEST_CASE(post_echo_like_handler_returns_ok) {
     auto [status, res] = RESTCore::Client::Post(false, host, std::to_string(port), "/post", "{\"k\":1}", "application/json");
     BOOST_TEST(status == 200u);
     BOOST_TEST(res[boost::beast::http::field::content_type] == "text/plain; charset=utf-8");
+}
+
+BOOST_AUTO_TEST_CASE(client_get_stream_invokes_chunk_callback) {
+    namespace asio = boost::asio;
+    using tcp = asio::ip::tcp;
+
+    const unsigned short stream_port = find_free_port();
+
+    auto ready = std::make_shared<std::promise<void>>();
+    auto ready_flag = std::make_shared<std::once_flag>();
+    auto signal_ready = [ready, ready_flag]() {
+        std::call_once(*ready_flag, [&]() { ready->set_value(); });
+    };
+
+    std::thread stream_server([stream_port, signal_ready]() mutable {
+        try {
+            asio::io_context ioc;
+            tcp::acceptor acceptor(ioc, {tcp::v4(), stream_port});
+            signal_ready();
+
+            tcp::socket socket(ioc);
+            acceptor.accept(socket);
+
+            asio::streambuf request;
+            boost::system::error_code ec;
+            asio::read_until(socket, request, "\r\n\r\n", ec);
+
+            auto send = [&](std::string_view chunk) {
+                boost::system::error_code write_ec;
+                asio::write(socket, asio::buffer(chunk.data(), chunk.size()), write_ec);
+            };
+
+            send("HTTP/1.1 200 OK\r\n"
+                 "Content-Type: text/plain\r\n"
+                 "Transfer-Encoding: chunked\r\n"
+                 "\r\n");
+
+            send("6\r\nHello \r\n");
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            send("5\r\nWorld\r\n");
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            send("1\r\n!\r\n");
+            send("0\r\n\r\n");
+
+            socket.shutdown(tcp::socket::shutdown_both, ec);
+        } catch (...) {
+            signal_ready();
+        }
+    });
+
+    ready->get_future().wait();
+
+    std::string collected;
+    bool done_called = false;
+
+    try {
+        const unsigned status = RESTCore::Client::GetStream(
+            false,
+            "127.0.0.1",
+            std::to_string(stream_port),
+            "/stream",
+            {},
+            [&](std::string_view chunk, bool done) {
+                collected.append(chunk.data(), chunk.size());
+                if (done) {
+                    done_called = true;
+                }
+            });
+
+        BOOST_TEST(status == 200u);
+    } catch (...) {
+        stream_server.join();
+        throw;
+    }
+
+    BOOST_TEST(done_called);
+    BOOST_TEST(collected == "Hello World!");
+
+    stream_server.join();
+}
+
+BOOST_AUTO_TEST_CASE(client_connection_get_stream_invokes_chunk_callback) {
+    namespace asio = boost::asio;
+    using tcp = asio::ip::tcp;
+
+    const unsigned short stream_port = find_free_port();
+
+    auto ready = std::make_shared<std::promise<void>>();
+    auto ready_flag = std::make_shared<std::once_flag>();
+    auto signal_ready = [ready, ready_flag]() {
+        std::call_once(*ready_flag, [&]() { ready->set_value(); });
+    };
+
+    std::thread stream_server([stream_port, signal_ready]() mutable {
+        try {
+            asio::io_context ioc;
+            tcp::acceptor acceptor(ioc, {tcp::v4(), stream_port});
+            signal_ready();
+
+            tcp::socket socket(ioc);
+            acceptor.accept(socket);
+
+            asio::streambuf request;
+            boost::system::error_code ec;
+            asio::read_until(socket, request, "\r\n\r\n", ec);
+
+            auto send = [&](std::string_view chunk) {
+                boost::system::error_code write_ec;
+                asio::write(socket, asio::buffer(chunk.data(), chunk.size()), write_ec);
+            };
+
+            send("HTTP/1.1 200 OK\r\n"
+                 "Content-Type: text/plain\r\n"
+                 "Transfer-Encoding: chunked\r\n"
+                 "\r\n");
+
+            send("6\r\nHello \r\n");
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            send("5\r\nWorld\r\n");
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            send("1\r\n!\r\n");
+            send("0\r\n\r\n");
+
+            socket.shutdown(tcp::socket::shutdown_both, ec);
+        } catch (...) {
+            signal_ready();
+        }
+    });
+
+    ready->get_future().wait();
+
+    RESTCore::Client::Connection connection(false, "127.0.0.1", std::to_string(stream_port));
+    std::string collected;
+    bool done_called = false;
+
+    const unsigned status = RESTCore::Client::GetStream(
+        connection,
+        "/stream",
+        {},
+        [&](std::string_view chunk, bool done) {
+            collected.append(chunk.data(), chunk.size());
+            if (done) {
+                done_called = true;
+            }
+        });
+
+    BOOST_TEST(status == 200u);
+    BOOST_TEST(done_called);
+    BOOST_TEST(collected == "Hello World!");
+    BOOST_TEST(!connection.is_open());
+
+    stream_server.join();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

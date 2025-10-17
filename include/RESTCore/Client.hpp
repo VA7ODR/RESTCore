@@ -9,10 +9,12 @@
  * small and dependency-light, suitable for tests, tools, and simple apps.
  */
 
-#include <string>
-#include <tuple>
+#include <functional>
 #include <map>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <tuple>
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -50,6 +52,8 @@ public:
     using Headers = std::map<std::string, std::string>;
     /// HTTP response type with a string body.
     using Response = boost::beast::http::response<boost::beast::http::string_body>;
+    /// Callback invoked for streamed responses; chunk is transient and only valid for the call.
+    using ChunkCallback = std::function<void(std::string_view chunk, bool done)>;
 
     /**
      * \brief Persistent HTTP(S) connection helper for keep-alive interactions.
@@ -84,6 +88,15 @@ public:
                 const Headers& headers = {},
                 const std::string* body = nullptr,
                 const std::string* content_type = nullptr);
+
+        /// Issue a streamed request over the persistent connection.
+        unsigned
+        stream_request(boost::beast::http::verb method,
+                       const std::string& target,
+                       const Headers& headers,
+                       const std::string* body,
+                       const std::string* content_type,
+                       const ChunkCallback& on_chunk);
 
     private:
         bool https_{false};
@@ -198,6 +211,88 @@ public:
         const Headers& headers = {});
     /** @} */
 
+    /**
+     * \name Streaming helpers
+     * invoke a callback for each chunk; return the HTTP status code.
+     * @{ */
+    static unsigned
+    GetStream(bool https,
+              const std::string& host,
+              const std::string& port,
+              const std::string& target,
+              const ChunkCallback& on_chunk);
+
+    static unsigned
+    GetStream(bool https,
+              const std::string& host,
+              const std::string& port,
+              const std::string& target,
+              const Headers& headers,
+              const ChunkCallback& on_chunk);
+
+    static unsigned
+    PostStream(bool https,
+               const std::string& host,
+               const std::string& port,
+               const std::string& target,
+               const std::string& body,
+               const ChunkCallback& on_chunk);
+
+    static unsigned
+    PostStream(bool https,
+               const std::string& host,
+               const std::string& port,
+               const std::string& target,
+               const std::string& body,
+               const std::string& content_type,
+               const Headers& headers,
+               const ChunkCallback& on_chunk);
+
+    static unsigned
+    GetStream(Connection& connection,
+              const std::string& target,
+              const ChunkCallback& on_chunk);
+
+    static unsigned
+    GetStream(Connection& connection,
+              const std::string& target,
+              const Headers& headers,
+              const ChunkCallback& on_chunk);
+
+    static unsigned
+    PostStream(Connection& connection,
+               const std::string& target,
+               const std::string& body,
+               const ChunkCallback& on_chunk);
+
+    static unsigned
+    PostStream(Connection& connection,
+               const std::string& target,
+               const std::string& body,
+               const std::string& content_type,
+               const Headers& headers,
+               const ChunkCallback& on_chunk);
+
+    static unsigned
+    GetStream(const std::string& url,
+              const ChunkCallback& on_chunk);
+
+    static unsigned
+    GetStream(const std::string& url,
+              const Headers& headers,
+              const ChunkCallback& on_chunk);
+
+    static unsigned
+    PostStream(const std::string& url,
+               const std::string& body,
+               const ChunkCallback& on_chunk);
+
+    static unsigned
+    PostStream(const std::string& url,
+               const std::string& body,
+               const std::string& content_type,
+               const Headers& headers,
+               const ChunkCallback& on_chunk);
 private:
     using tcp = boost::asio::ip::tcp;
 
@@ -216,6 +311,17 @@ private:
             const Headers& headers,
             const std::string* body,
             const std::string* content_type);
+
+    static unsigned
+    stream_request(bool https,
+                   boost::beast::http::verb method,
+                   const std::string& host,
+                   const std::string& port,
+                   const std::string& target,
+                   const Headers& headers,
+                   const std::string* body,
+                   const std::string* content_type,
+                   const ChunkCallback& on_chunk);
 
     /// Parsed representation of a small subset of URLs supported by the URL overloads.
     struct ParsedUrl { bool https; std::string host; std::string port; std::string target; };

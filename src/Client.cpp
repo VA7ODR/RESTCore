@@ -1,5 +1,8 @@
 #include "RESTCore/Client.hpp"
 
+#include <array>
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <regex>
 #include <utility>
@@ -185,6 +188,149 @@ RESTCore::Client::Connection::request(http::verb method,
     return {res.result_int(), std::move(res)};
 }
 
+unsigned
+RESTCore::Client::Connection::stream_request(http::verb method,
+                                             const std::string& target,
+                                             const Headers& headers,
+                                             const std::string* body,
+                                             const std::string* content_type,
+                                             const ChunkCallback& on_chunk) {
+    if (!on_chunk) {
+        throw std::invalid_argument("Client::Connection::stream_request requires a non-empty chunk callback");
+    }
+    if (!is_open()) {
+        if (close_reason_.empty()) {
+            throw std::runtime_error("Connection is closed");
+        }
+        throw std::runtime_error("Connection is closed: " + close_reason_);
+    }
+
+    http::request<http::string_body> req{method, target, 11};
+    req.set(http::field::host, host_);
+    req.set(http::field::user_agent, std::string{"HTTPClient/1.0 (Boost.Beast)"});
+    req.keep_alive(true);
+    for (const auto& kv : headers) {
+        req.set(kv.first, kv.second);
+    }
+    if (body) {
+        req.set(http::field::content_type,
+                content_type ? *content_type : std::string{"application/octet-stream"});
+        req.body() = *body;
+        req.prepare_payload();
+    }
+
+    beast::flat_buffer buffer;
+    http::response_parser<http::buffer_body> parser;
+    parser.body_limit((std::numeric_limits<std::uint64_t>::max)());
+    bool keep_alive = false;
+    bool saw_end_of_stream = false;
+    bool chunked_mode = false;
+
+    auto chunk_header_cb = [&](std::uint64_t, boost::string_view, beast::error_code& ec) -> std::size_t {
+        chunked_mode = true;
+        static_cast<void>(ec);
+        return 0;
+    };
+    auto chunk_body_cb = [&](std::uint64_t, boost::string_view body, beast::error_code& ec) -> std::size_t {
+        static_cast<void>(ec);
+        if (!body.empty()) {
+            on_chunk(std::string_view{body.data(), body.size()}, false);
+        }
+        return body.size();
+    };
+    parser.on_chunk_header(chunk_header_cb);
+    parser.on_chunk_body(chunk_body_cb);
+
+    auto perform_stream = [&](auto& stream) -> unsigned {
+        saw_end_of_stream = false;
+        chunked_mode = false;
+
+        http::write(stream, req);
+        http::read_header(stream, buffer, parser);
+
+        const unsigned status = parser.get().result_int();
+        chunked_mode = parser.chunked();
+
+        if (chunked_mode) {
+            while (!parser.is_done()) {
+                beast::error_code ec;
+                http::read_some(stream, buffer, parser, ec);
+
+                if (ec == http::error::end_of_stream) {
+                    saw_end_of_stream = true;
+                    break;
+                }
+                if (ec && ec != http::error::need_buffer) {
+                    throw beast::system_error{ec};
+                }
+            }
+            on_chunk(std::string_view{}, true);
+            keep_alive = false;
+        } else {
+            std::array<char, 8192> storage{};
+
+            while (!parser.is_done()) {
+                parser.get().body().data = storage.data();
+                parser.get().body().size = storage.size();
+
+                beast::error_code ec;
+                const std::size_t bytes = http::read_some(stream, buffer, parser, ec);
+
+                if (ec == http::error::end_of_stream) {
+                    saw_end_of_stream = true;
+                } else if (ec && ec != http::error::need_buffer) {
+                    throw beast::system_error{ec};
+                }
+
+                const bool done = parser.is_done();
+                if (bytes > 0 || done) {
+                    on_chunk(std::string_view{storage.data(), bytes}, done);
+                }
+
+                parser.get().body().data = nullptr;
+                parser.get().body().size = 0;
+
+                if (done || ec == http::error::end_of_stream) {
+                    break;
+                }
+            }
+
+            keep_alive = saw_end_of_stream ? false : parser.get().keep_alive();
+        }
+
+        return status;
+    };
+
+    unsigned status = 0;
+
+    try {
+        if (!https_) {
+            status = perform_stream(*http_stream_);
+        }
+        else {
+            status = perform_stream(*https_stream_);
+        }
+    } catch (const beast::system_error& se) {
+        std::string message;
+        if (se.code() == http::error::end_of_stream) {
+            message = "Peer closed the connection during the HTTP exchange (keep-alive unsupported or timed out): " +
+                      se.code().message();
+        } else {
+            message = "HTTP keep-alive stream failed: " + se.code().message();
+        }
+        close(message);
+        throw beast::system_error{se.code(), message};
+    }
+
+    if (!keep_alive) {
+        close("Server indicated Connection: close (keep-alive disabled or mismatch).");
+    } else {
+        close_reason_.clear();
+    }
+
+    return status;
+}
+
 std::tuple<unsigned, RESTCore::Client::Response>
 RESTCore::Client::Head(const std::string& url, const Headers& headers) {
     auto p = parseUrl(url);
@@ -303,6 +449,129 @@ RESTCore::Client::Put(Connection& connection,
     return connection.request(http::verb::put, target, headers, &body, &content_type);
 }
 
+unsigned
+RESTCore::Client::GetStream(bool https,
+                            const std::string& host,
+                            const std::string& port,
+                            const std::string& target,
+                            const ChunkCallback& on_chunk) {
+    return GetStream(https, host, port, target, Headers{}, on_chunk);
+}
+
+unsigned
+RESTCore::Client::GetStream(bool https,
+                            const std::string& host,
+                            const std::string& port,
+                            const std::string& target,
+                            const Headers& headers,
+                            const ChunkCallback& on_chunk) {
+    if (!on_chunk) {
+        throw std::invalid_argument("Client::GetStream requires a non-empty chunk callback");
+    }
+    return stream_request(https, http::verb::get, host, port, target, headers, nullptr, nullptr, on_chunk);
+}
+
+unsigned
+RESTCore::Client::PostStream(bool https,
+                             const std::string& host,
+                             const std::string& port,
+                             const std::string& target,
+                             const std::string& body,
+                             const ChunkCallback& on_chunk) {
+    return PostStream(https, host, port, target, body, std::string{"application/json"}, Headers{}, on_chunk);
+}
+
+unsigned
+RESTCore::Client::PostStream(bool https,
+                             const std::string& host,
+                             const std::string& port,
+                             const std::string& target,
+                             const std::string& body,
+                             const std::string& content_type,
+                             const Headers& headers,
+                             const ChunkCallback& on_chunk) {
+    if (!on_chunk) {
+        throw std::invalid_argument("Client::PostStream requires a non-empty chunk callback");
+    }
+    return stream_request(https, http::verb::post, host, port, target, headers, &body, &content_type, on_chunk);
+}
+
+unsigned
+RESTCore::Client::GetStream(Connection& connection,
+                            const std::string& target,
+                            const ChunkCallback& on_chunk) {
+    return GetStream(connection, target, Headers{}, on_chunk);
+}
+
+unsigned
+RESTCore::Client::GetStream(Connection& connection,
+                            const std::string& target,
+                            const Headers& headers,
+                            const ChunkCallback& on_chunk) {
+    if (!on_chunk) {
+        throw std::invalid_argument("Client::GetStream requires a non-empty chunk callback");
+    }
+    return connection.stream_request(http::verb::get, target, headers, nullptr, nullptr, on_chunk);
+}
+
+unsigned
+RESTCore::Client::PostStream(Connection& connection,
+                             const std::string& target,
+                             const std::string& body,
+                             const ChunkCallback& on_chunk) {
+    return PostStream(connection, target, body, std::string{"application/json"}, Headers{}, on_chunk);
+}
+
+unsigned
+RESTCore::Client::PostStream(Connection& connection,
+                             const std::string& target,
+                             const std::string& body,
+                             const std::string& content_type,
+                             const Headers& headers,
+                             const ChunkCallback& on_chunk) {
+    if (!on_chunk) {
+        throw std::invalid_argument("Client::PostStream requires a non-empty chunk callback");
+    }
+    return connection.stream_request(http::verb::post, target, headers, &body, &content_type, on_chunk);
+}
+
+unsigned
+RESTCore::Client::GetStream(const std::string& url,
+                            const ChunkCallback& on_chunk) {
+    return GetStream(url, Headers{}, on_chunk);
+}
+
+unsigned
+RESTCore::Client::GetStream(const std::string& url,
+                            const Headers& headers,
+                            const ChunkCallback& on_chunk) {
+    if (!on_chunk) {
+        throw std::invalid_argument("Client::GetStream requires a non-empty chunk callback");
+    }
+    auto p = parseUrl(url);
+    return stream_request(p.https, http::verb::get, p.host, p.port, p.target, headers, nullptr, nullptr, on_chunk);
+}
+
+unsigned
+RESTCore::Client::PostStream(const std::string& url,
+                             const std::string& body,
+                             const ChunkCallback& on_chunk) {
+    return PostStream(url, body, std::string{"application/json"}, Headers{}, on_chunk);
+}
+
+unsigned
+RESTCore::Client::PostStream(const std::string& url,
+                             const std::string& body,
+                             const std::string& content_type,
+                             const Headers& headers,
+                             const ChunkCallback& on_chunk) {
+    if (!on_chunk) {
+        throw std::invalid_argument("Client::PostStream requires a non-empty chunk callback");
+    }
+    auto p = parseUrl(url);
+    return stream_request(p.https, http::verb::post, p.host, p.port, p.target, headers, &body, &content_type, on_chunk);
+}
+
 std::tuple<unsigned, RESTCore::Client::Response>
 RESTCore::Client::request(bool https,
                     http::verb method,
@@ -377,4 +646,146 @@ RESTCore::Client::request(bool https,
     }
 
     return {res.result_int(), std::move(res)};
+}
+
+unsigned
+RESTCore::Client::stream_request(bool https,
+                                 http::verb method,
+                                 const std::string& host,
+                                 const std::string& port,
+                                 const std::string& target,
+                                 const Headers& headers,
+                                 const std::string* body,
+                                 const std::string* content_type,
+                                 const ChunkCallback& on_chunk) {
+    if (!on_chunk) {
+        throw std::invalid_argument("Client::stream_request requires a non-empty chunk callback");
+    }
+
+    net::io_context ioc;
+
+    tcp::resolver resolver{ioc};
+    auto const results = resolver.resolve(host, port);
+
+    http::request<http::string_body> req{method, target, 11};
+    req.set(http::field::host, host);
+    req.set(http::field::user_agent, std::string{"HTTPClient/1.0 (Boost.Beast)"});
+    req.keep_alive(false);
+    for (const auto& kv : headers) {
+        req.set(kv.first, kv.second);
+    }
+    if (body) {
+        req.set(http::field::content_type,
+                content_type ? *content_type : std::string{"application/octet-stream"});
+        req.body() = *body;
+        req.prepare_payload();
+    }
+
+    beast::flat_buffer buffer;
+    http::response_parser<http::buffer_body> parser;
+    parser.body_limit((std::numeric_limits<std::uint64_t>::max)());
+    bool chunked_mode = false;
+
+    auto chunk_header_cb = [&](std::uint64_t, boost::string_view, beast::error_code& ec) -> std::size_t {
+        chunked_mode = true;
+        static_cast<void>(ec);
+        return 0;
+    };
+    auto chunk_body_cb = [&](std::uint64_t, boost::string_view body, beast::error_code& ec) -> std::size_t {
+        static_cast<void>(ec);
+        if (!body.empty()) {
+            on_chunk(std::string_view{body.data(), body.size()}, false);
+        }
+        return body.size();
+    };
+    parser.on_chunk_header(chunk_header_cb);
+    parser.on_chunk_body(chunk_body_cb);
+
+    auto perform_stream = [&](auto& stream) -> unsigned {
+        chunked_mode = false;
+
+        http::write(stream, req);
+        http::read_header(stream, buffer, parser);
+
+        const unsigned status = parser.get().result_int();
+        chunked_mode = parser.chunked();
+
+        if (chunked_mode) {
+            while (!parser.is_done()) {
+                beast::error_code ec;
+                http::read_some(stream, buffer, parser, ec);
+
+                if (ec && ec != http::error::need_buffer && ec != http::error::end_of_stream) {
+                    throw beast::system_error{ec};
+                }
+
+                if (ec == http::error::end_of_stream) {
+                    break;
+                }
+            }
+            on_chunk(std::string_view{}, true);
+        } else {
+            std::array<char, 8192> storage{};
+
+            while (!parser.is_done()) {
+                parser.get().body().data = storage.data();
+                parser.get().body().size = storage.size();
+
+                beast::error_code ec;
+                const std::size_t bytes = http::read_some(stream, buffer, parser, ec);
+
+                if (ec && ec != http::error::need_buffer && ec != http::error::end_of_stream) {
+                    throw beast::system_error{ec};
+                }
+
+                const bool done = parser.is_done();
+                if (bytes > 0 || done) {
+                    on_chunk(std::string_view{storage.data(), bytes}, done);
+                }
+
+                parser.get().body().data = nullptr;
+                parser.get().body().size = 0;
+
+                if (done || ec == http::error::end_of_stream) {
+                    break;
+                }
+            }
+        }
+
+        parser.get().body().data = nullptr;
+        parser.get().body().size = 0;
+
+        return status;
+    };
+
+    if (!https) {
+        beast::tcp_stream stream{ioc};
+        stream.connect(results);
+
+        const unsigned status = perform_stream(stream);
+
+        beast::error_code ec;
+        stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+        return status;
+    }
+
+    ssl::context ctx{ssl::context::tls_client};
+    ctx.set_default_verify_paths();
+    ctx.set_verify_mode(ssl::verify_peer);
+
+    beast::ssl_stream<beast::tcp_stream> stream{ioc, ctx};
+
+    if (!SSL_set_tlsext_host_name(stream.native_handle(), host.c_str())) {
+        beast::error_code ec{static_cast<int>(::ERR_get_error()), net::error::get_ssl_category()};
+        throw beast::system_error{ec};
+    }
+
+    beast::get_lowest_layer(stream).connect(results);
+    stream.handshake(ssl::stream_base::client);
+
+    const unsigned status = perform_stream(stream);
+
+    beast::error_code ec;
+    stream.shutdown(ec);
+    return status;
 }

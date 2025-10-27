@@ -33,13 +33,12 @@ WARN_NO_PARAMDOC       = YES
 
 # Input
 INPUT                  = \
-  README.md \
   include \
   src
 FILE_PATTERNS          = *.hpp *.h *.cpp *.md
 RECURSIVE              = YES
 EXCLUDE_PATTERNS       = */cmake-build-*/* */.git/*
-USE_MDFILE_AS_MAINPAGE = README.md
+# USE_MDFILE_AS_MAINPAGE =
 
 # Source browsing
 SOURCE_BROWSER         = YES
